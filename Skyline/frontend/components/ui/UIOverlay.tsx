@@ -72,7 +72,7 @@ export const UIOverlay: React.FC = () => {
         if (error) {
             console.error('Logout error:', error.message);
         } else {
-            window.location.href = `${process.env.NEXT_PUBLIC_HOME_URL ?? 'http://localhost:3001'}`;
+            window.location.href = '/';
         }
     };
 
