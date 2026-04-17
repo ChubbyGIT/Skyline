@@ -103,7 +103,7 @@ const WindowGrid = ({ floors, cols, bodyHeight, bodyWidth, topWidth, theme, hove
 
 /* ─── floor lines (horizontal mullions) ─── */
 const FloorLines = ({ floors, bodyHeight, bodyWidth, topWidth, theme, hovered }: any) => {
-  const elements: JSX.Element[] = [];
+  const elements: any[] = [];
   const lineColor = hovered ? '#FFD700' : theme === 'day' ? '#bcc5ce' : '#555555';
   const floorH = bodyHeight / floors;
 
@@ -252,7 +252,7 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
         {(() => {
           const sections = Math.min(6, Math.max(2, Math.ceil(bd.bodyHeight / 2)));
           const sectionH = bd.bodyHeight / sections;
-          const els: JSX.Element[] = [];
+          const els: any[] = [];
           for (let s = 0; s < sections; s++) {
             const t0 = s / sections;
             const t1 = (s + 1) / sections;
