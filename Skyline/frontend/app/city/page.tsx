@@ -27,7 +27,7 @@ export default function CityPage() {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        window.location.href = `${process.env.NEXT_PUBLIC_HOME_URL ?? 'http://localhost:3001'}`;
+        window.location.href = '/';
       }
     };
     checkUser();
