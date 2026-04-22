@@ -7,19 +7,31 @@ import { Castle } from './Castle';
 import { ThreeEvent } from '@react-three/fiber';
 
 export const City: React.FC = () => {
-  const {
-    buildings, gridSize, isRepositioning, repositioningBuildingId,
-    previewPosition, selectedBuildingId, theme,
-    repositionBuilding, setPreviewPosition, commitReposition,
-    isTileValidForReposition,
-    timelineActive, getVisibleBuildingIds,
-  } = useStore();
+  const buildings = useStore(s => s.buildings);
+  const gridSize = useStore(s => s.gridSize);
+  const isRepositioning = useStore(s => s.isRepositioning);
+  const repositioningBuildingId = useStore(s => s.repositioningBuildingId);
+  const previewPosition = useStore(s => s.previewPosition);
+  const selectedBuildingId = useStore(s => s.selectedBuildingId);
+  const theme = useStore(s => s.theme);
+  const setPreviewPosition = useStore(s => s.setPreviewPosition);
+  const commitReposition = useStore(s => s.commitReposition);
+  const isTileValidForReposition = useStore(s => s.isTileValidForReposition);
+  const timelineActive = useStore(s => s.timelineActive);
+  const timelinePercent = useStore(s => s.timelinePercent);
+  const memories = useStore(s => s.memories);
 
-  // When timeline is active, compute which buildings are visible
+  // When timeline is active, compute which buildings are visible based on construction order
   const visibleIds = useMemo(() => {
     if (!timelineActive) return null;
-    return getVisibleBuildingIds();
-  }, [timelineActive, getVisibleBuildingIds, buildings]);
+    // Sort memories by createdAt (construction order)
+    const sorted = [...memories].sort((a, b) =>
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+    const total = sorted.length;
+    const visibleCount = Math.round((timelinePercent / 100) * total);
+    return new Set(sorted.slice(0, visibleCount).map(m => m.id));
+  }, [timelineActive, timelinePercent, memories]);
 
   const groundColor = theme === 'day' ? '#5cb85c' : '#1a4d1a';
   const occupiedColor = theme === 'day' ? '#8a8a8a' : '#4a4a4a';

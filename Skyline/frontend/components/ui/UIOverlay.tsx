@@ -949,18 +949,22 @@ export const UIOverlay: React.FC = () => {
                 <div 
                     className="fixed inset-0 z-50 flex items-center justify-center pointer-events-auto overflow-y-auto"
                     style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}
+                    onClick={handleCancelModal}
                 >
                     <div 
+                        onClick={(e) => e.stopPropagation()}
                         style={{
-                            ...sidebarStyles,
-                            position: 'relative',
+                            fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+                            background: 'rgba(6, 40, 30, 0.9)',
+                            backdropFilter: 'blur(20px)',
+                            WebkitBackdropFilter: 'blur(20px)',
+                            border: '1px solid rgba(52,211,153,0.2)',
+                            boxShadow: '0 25px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)',
+                            borderRadius: '20px',
+                            position: 'relative' as const,
                             width: '35vw',
                             minWidth: '380px',
                             padding: '22px 26px',
-                            borderRadius: '20px',
-                            background: 'rgba(6, 40, 30, 0.9)',
-                            border: '1px solid rgba(52,211,153,0.2)',
-                            boxShadow: '0 25px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)',
                         }}
                     >
                         {/* Corner glow */}
@@ -969,9 +973,10 @@ export const UIOverlay: React.FC = () => {
 
                         {/* Close */}
                         <button 
-                            onClick={handleCancelModal} 
+                            onClick={(e) => { e.stopPropagation(); handleCancelModal(); }} 
                             style={{
                                 position: 'absolute', top: '20px', right: '20px',
+                                zIndex: 10,
                                 width: '32px', height: '32px', borderRadius: '50%',
                                 border: '1px solid rgba(255,255,255,0.15)',
                                 background: 'transparent', color: '#6ee7b7',
@@ -1407,6 +1412,7 @@ export const UIOverlay: React.FC = () => {
             )}
 
             {/* ─── BOTTOM BAR: Export + Timeline Toggle ─── */}
+            {!isModalOpen && (
             <div
                 className="pointer-events-auto"
                 style={{
@@ -1478,6 +1484,7 @@ export const UIOverlay: React.FC = () => {
                     <Clock size={14} /> {timelineActive ? 'Exit Timeline' : 'View Timeline'}
                 </button>
             </div>
+            )}
 
             {/* ─── EXPORT SUCCESS NOTIFICATION ─── */}
             {exportNotification && (
