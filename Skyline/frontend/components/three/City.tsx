@@ -12,7 +12,14 @@ export const City: React.FC = () => {
     previewPosition, selectedBuildingId, theme,
     repositionBuilding, setPreviewPosition, commitReposition,
     isTileValidForReposition,
+    timelineActive, getVisibleBuildingIds,
   } = useStore();
+
+  // When timeline is active, compute which buildings are visible
+  const visibleIds = useMemo(() => {
+    if (!timelineActive) return null;
+    return getVisibleBuildingIds();
+  }, [timelineActive, getVisibleBuildingIds, buildings]);
 
   const groundColor = theme === 'day' ? '#5cb85c' : '#1a4d1a';
   const occupiedColor = theme === 'day' ? '#8a8a8a' : '#4a4a4a';
@@ -127,7 +134,9 @@ export const City: React.FC = () => {
       ))}
 
       {/* Buildings & Castles */}
-      {buildings.map((b) => (
+      {buildings
+        .filter(b => !visibleIds || visibleIds.has(b.id))
+        .map((b) => (
         b.isCore ? (
           <Castle key={b.id} data={b} />
         ) : (

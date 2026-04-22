@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore, MemoryCategory } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
-import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock } from 'lucide-react';
+import { CATEGORY_COLORS } from '@/store/useStore';
 
 export const UIOverlay: React.FC = () => {
     const router = useRouter();
@@ -16,6 +17,7 @@ export const UIOverlay: React.FC = () => {
         repositioningBuildingId,
         previewPosition,
         isLoading,
+        gridSize,
         addMemory, 
         removeMemory, 
         selectBuilding,
@@ -26,6 +28,11 @@ export const UIOverlay: React.FC = () => {
         commitReposition,
         setPreviewPosition,
         isTileValidForReposition,
+        timelineActive,
+        timelinePercent,
+        setTimelineActive,
+        setTimelinePercent,
+        getVisibleBuildingIds,
     } = useStore() as any;
 
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -37,6 +44,8 @@ export const UIOverlay: React.FC = () => {
     const [relocCoordX, setRelocCoordX] = useState('');
     const [relocCoordZ, setRelocCoordZ] = useState('');
     const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
+    const [timelinePanelOpen, setTimelinePanelOpen] = useState(false);
+    const [exportNotification, setExportNotification] = useState(false);
     const [formData, setFormData] = useState({
         title: '',
         caption: '',
@@ -94,6 +103,167 @@ export const UIOverlay: React.FC = () => {
             date: new Date().toISOString().split('T')[0],
             image: null
         });
+    };
+
+    const handleCancelModal = () => {
+        setIsModalOpen(false);
+        setIsCore(false);
+        setFormData({
+            title: '',
+            caption: '',
+            category: MemoryCategory.OTHER,
+            impact: 50,
+            fondness: 50,
+            date: new Date().toISOString().split('T')[0],
+            image: null
+        });
+        setIsDropdownOpen(false);
+    };
+
+    /* ── 2D Map Export ── */
+    const handleExport2DMap = () => {
+        const cellSize = 48;
+        const padding = 80;
+        const legendW = 200;
+        const canvasW = gridSize * cellSize + padding * 2 + legendW;
+        const canvasH = gridSize * cellSize + padding * 2 + 60;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(canvasW, 1920);
+        canvas.height = Math.max(canvasH, 1920);
+        const ctx = canvas.getContext('2d')!;
+
+        // Background
+        ctx.fillStyle = '#0f1a14';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Title
+        ctx.fillStyle = '#d1fae5';
+        ctx.font = 'bold 28px Inter, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Skyline City Map — ${gridSize}×${gridSize} Grid`, canvas.width / 2, 40);
+
+        const offsetX = padding;
+        const offsetY = padding + 20;
+
+        // Grid lines
+        ctx.strokeStyle = 'rgba(110,231,183,0.15)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= gridSize; i++) {
+            ctx.beginPath();
+            ctx.moveTo(offsetX + i * cellSize, offsetY);
+            ctx.lineTo(offsetX + i * cellSize, offsetY + gridSize * cellSize);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(offsetX, offsetY + i * cellSize);
+            ctx.lineTo(offsetX + gridSize * cellSize, offsetY + i * cellSize);
+            ctx.stroke();
+        }
+
+        // Axis labels
+        ctx.fillStyle = '#6ee7b780';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        for (let i = 0; i < gridSize; i++) {
+            ctx.fillText(String(i), offsetX + i * cellSize + cellSize / 2, offsetY - 6);
+            ctx.fillText(String(i), offsetX - 14, offsetY + i * cellSize + cellSize / 2 + 4);
+        }
+
+        // Draw empty cells (light grey)
+        for (let x = 0; x < gridSize; x++) {
+            for (let z = 0; z < gridSize; z++) {
+                ctx.fillStyle = 'rgba(255,255,255,0.03)';
+                ctx.fillRect(offsetX + x * cellSize + 1, offsetY + z * cellSize + 1, cellSize - 2, cellSize - 2);
+            }
+        }
+
+        // Draw buildings
+        buildings.forEach((b: any) => {
+            const mem = memories.find((m: any) => m.id === b.memoryId);
+            if (!mem) return;
+            const color = b.color || '#FFD700';
+            const isCore = !!b.isCore;
+            const footprint = isCore ? 5 : 2;
+            const halfFp = Math.floor(footprint / 2);
+            const startX = b.position.x - halfFp;
+            const startZ = b.position.z - halfFp;
+
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.75;
+            for (let dx = 0; dx < footprint; dx++) {
+                for (let dz = 0; dz < footprint; dz++) {
+                    const gx = startX + dx;
+                    const gz = startZ + dz;
+                    if (gx >= 0 && gx < gridSize && gz >= 0 && gz < gridSize) {
+                        ctx.fillRect(
+                            offsetX + gx * cellSize + 2,
+                            offsetY + gz * cellSize + 2,
+                            cellSize - 4,
+                            cellSize - 4
+                        );
+                    }
+                }
+            }
+            ctx.globalAlpha = 1;
+
+            // Label
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 9px Inter, Arial, sans-serif';
+            ctx.textAlign = 'center';
+            const title = (mem.title || '').replace('[CORE] ', '').substring(0, 12);
+            ctx.fillText(
+                title,
+                offsetX + b.position.x * cellSize + cellSize / 2,
+                offsetY + b.position.z * cellSize + cellSize / 2 + 3
+            );
+        });
+
+        // Legend
+        const legendX = offsetX + gridSize * cellSize + 40;
+        const legendY = offsetY + 20;
+        ctx.fillStyle = '#d1fae5';
+        ctx.font = 'bold 14px Inter, Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('Legend', legendX, legendY);
+
+        const categories = [
+            { name: 'Career', color: '#4A90E2' },
+            { name: 'Health', color: '#FF69B4' },
+            { name: 'Relationships', color: '#90EE90' },
+            { name: 'Personal', color: '#FF6B6B' },
+            { name: 'Other', color: '#FFD700' },
+        ];
+        categories.forEach((cat, i) => {
+            const y = legendY + 24 + i * 28;
+            ctx.fillStyle = cat.color;
+            ctx.globalAlpha = 0.75;
+            ctx.fillRect(legendX, y - 10, 18, 18);
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#d1fae5';
+            ctx.font = '12px Inter, Arial, sans-serif';
+            ctx.fillText(cat.name, legendX + 26, y + 4);
+        });
+
+        // Footer
+        const now = new Date();
+        ctx.fillStyle = '#6ee7b760';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(
+            `Exported: ${now.toISOString().split('T')[0]} | ${memories.length} memories | Skyline Engine`,
+            canvas.width / 2,
+            canvas.height - 20
+        );
+
+        // Download
+        const link = document.createElement('a');
+        const ts = now.toISOString().replace(/[:.]/g, '').replace('T', '_').substring(0, 15);
+        link.download = `skyline_map_${ts}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+
+        setExportNotification(true);
+        setTimeout(() => setExportNotification(false), 3000);
     };
 
     const selectedBuilding = buildings.find((b: any) => b.id === selectedBuildingId);
@@ -799,7 +969,7 @@ export const UIOverlay: React.FC = () => {
 
                         {/* Close */}
                         <button 
-                            onClick={() => setIsModalOpen(false)} 
+                            onClick={handleCancelModal} 
                             style={{
                                 position: 'absolute', top: '20px', right: '20px',
                                 width: '32px', height: '32px', borderRadius: '50%',
@@ -1113,6 +1283,240 @@ export const UIOverlay: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* ─── TIME SCROLLER (Top of screen) ─── */}
+            {timelineActive && (
+                <div
+                    className="fixed pointer-events-auto"
+                    style={{
+                        top: '16px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 58,
+                        width: '60vw',
+                        minWidth: '500px',
+                        maxWidth: '900px',
+                        background: 'rgba(6, 40, 30, 0.92)',
+                        backdropFilter: 'blur(20px)',
+                        border: '1px solid rgba(168,85,247,0.3)',
+                        borderRadius: '20px',
+                        padding: '18px 28px',
+                        boxShadow: '0 15px 50px rgba(0,0,0,0.6), 0 0 30px rgba(168,85,247,0.12)',
+                        fontFamily: "'Inter', sans-serif",
+                    }}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{
+                                width: '10px', height: '10px', borderRadius: '50%',
+                                background: '#a855f7', boxShadow: '0 0 10px #a855f7',
+                                animation: 'pulse 1.5s infinite',
+                            }} />
+                            <span style={{ fontSize: '13px', fontWeight: 600, color: '#e9d5ff' }}>Timeline Mode</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            {/* Construction count */}
+                            <span style={{ fontSize: '11px', color: '#c4b5fd', fontWeight: 600 }}>
+                                {(() => {
+                                    const sorted = [...memories].sort((a: any, b: any) =>
+                                        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                                    );
+                                    const visibleCount = Math.round((timelinePercent / 100) * sorted.length);
+                                    return `${visibleCount} of ${sorted.length} buildings`;
+                                })()}
+                            </span>
+                            {/* Percentage */}
+                            <span style={{
+                                fontSize: '18px', fontWeight: 700, color: '#a855f7',
+                                minWidth: '50px', textAlign: 'right',
+                                textShadow: '0 0 10px rgba(168,85,247,0.5)',
+                            }}>{Math.round(timelinePercent)}%</span>
+                            {/* Exit button */}
+                            <button
+                                onClick={() => { setTimelineActive(false); setTimelinePanelOpen(false); }}
+                                style={{
+                                    padding: '6px 14px', borderRadius: '10px',
+                                    background: 'rgba(168,85,247,0.15)',
+                                    border: '1px solid rgba(168,85,247,0.4)',
+                                    color: '#c4b5fd', fontWeight: 600, fontSize: '11px',
+                                    cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit',
+                                    letterSpacing: '0.5px',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(168,85,247,0.3)'; e.currentTarget.style.boxShadow = '0 0 15px rgba(168,85,247,0.3)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(168,85,247,0.15)'; e.currentTarget.style.boxShadow = 'none'; }}
+                            >Return to Present</button>
+                        </div>
+                    </div>
+
+                    {/* Slider */}
+                    <div style={{ position: 'relative' }}>
+                        <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            step="1"
+                            value={timelinePercent}
+                            onChange={(e) => setTimelinePercent(parseInt(e.target.value))}
+                            style={{
+                                width: '100%',
+                                accentColor: '#a855f7',
+                                height: '6px',
+                                cursor: 'pointer',
+                            }}
+                            className="appearance-none bg-white/10 rounded-lg outline-none"
+                        />
+                        {/* Date indicator */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                            <span style={{ fontSize: '9px', color: '#c4b5fd80', fontWeight: 500 }}>
+                                {(() => {
+                                    const sorted = [...memories].sort((a: any, b: any) =>
+                                        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                                    );
+                                    return sorted.length > 0
+                                        ? new Date(sorted[0].createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                                        : 'Start';
+                                })()}
+                            </span>
+                            <span style={{ fontSize: '9px', color: '#c4b5fd80', fontWeight: 500 }}>
+                                {(() => {
+                                    const sorted = [...memories].sort((a: any, b: any) =>
+                                        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                                    );
+                                    const visibleCount = Math.round((timelinePercent / 100) * sorted.length);
+                                    const currentMem = sorted[Math.max(0, visibleCount - 1)];
+                                    return currentMem
+                                        ? new Date(currentMem.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                        : '—';
+                                })()}
+                            </span>
+                            <span style={{ fontSize: '9px', color: '#c4b5fd80', fontWeight: 500 }}>Now</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Pulse animation for timeline indicator */}
+            {timelineActive && (
+                <style>{`
+                    @keyframes pulse {
+                        0%, 100% { opacity: 1; transform: scale(1); }
+                        50% { opacity: 0.5; transform: scale(0.85); }
+                    }
+                `}</style>
+            )}
+
+            {/* ─── BOTTOM BAR: Export + Timeline Toggle ─── */}
+            <div
+                className="pointer-events-auto"
+                style={{
+                    position: 'fixed',
+                    bottom: '20px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 999,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                }}
+            >
+                {/* Export 2D Map */}
+                <button
+                    onClick={handleExport2DMap}
+                    style={{
+                        ...glassCard,
+                        padding: '10px 20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        color: '#6ee7b7',
+                        fontWeight: 600,
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        fontFamily: "'Inter', sans-serif",
+                        letterSpacing: '0.5px',
+                        border: '1px solid rgba(52,211,153,0.3)',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(16,185,129,0.2)'; e.currentTarget.style.boxShadow = '0 0 20px rgba(52,211,153,0.3)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.4)'; }}
+                >
+                    <Download size={14} /> Export 2D Map
+                </button>
+
+                {/* Timeline Toggle */}
+                <button
+                    onClick={() => {
+                        if (timelineActive) {
+                            setTimelineActive(false);
+                        } else {
+                            setTimelineActive(true);
+                        }
+                    }}
+                    style={{
+                        ...glassCard,
+                        padding: '10px 20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        color: timelineActive ? '#c4b5fd' : '#a78bfa',
+                        fontWeight: 600,
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        fontFamily: "'Inter', sans-serif",
+                        letterSpacing: '0.5px',
+                        border: timelineActive ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(168,85,247,0.3)',
+                        background: timelineActive ? 'rgba(168,85,247,0.15)' : 'rgba(255,255,255,0.06)',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(168,85,247,0.2)'; e.currentTarget.style.boxShadow = '0 0 20px rgba(168,85,247,0.3)'; }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.background = timelineActive ? 'rgba(168,85,247,0.15)' : 'rgba(255,255,255,0.06)';
+                        e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.4)';
+                    }}
+                >
+                    <Clock size={14} /> {timelineActive ? 'Exit Timeline' : 'View Timeline'}
+                </button>
+            </div>
+
+            {/* ─── EXPORT SUCCESS NOTIFICATION ─── */}
+            {exportNotification && (
+                <div
+                    className="fixed pointer-events-none"
+                    style={{
+                        bottom: '80px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 1000,
+                        background: 'rgba(16,185,129,0.2)',
+                        backdropFilter: 'blur(12px)',
+                        border: '1px solid rgba(52,211,153,0.5)',
+                        borderRadius: '14px',
+                        padding: '12px 24px',
+                        boxShadow: '0 10px 30px rgba(0,0,0,0.4), 0 0 20px rgba(52,211,153,0.2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        fontFamily: "'Inter', sans-serif",
+                        animation: 'fadeInUp 0.3s ease-out',
+                    }}
+                >
+                    <div style={{
+                        width: '24px', height: '24px', borderRadius: '50%',
+                        background: 'rgba(52,211,153,0.3)', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center',
+                        fontSize: '14px',
+                    }}>✓</div>
+                    <span style={{ fontSize: '13px', color: '#d1fae5', fontWeight: 600 }}>Map exported successfully!</span>
+                </div>
+            )}
+            {exportNotification && (
+                <style>{`
+                    @keyframes fadeInUp {
+                        from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+                        to { opacity: 1; transform: translateX(-50%) translateY(0); }
+                    }
+                `}</style>
             )}
         </div>
     );

@@ -69,6 +69,20 @@ export const CATEGORY_COLORS: Record<MemoryCategory, string> = {
   [MemoryCategory.OTHER]: '#FFD700' // Gold-Yellow
 };
 
+// Helper: compute building height using weighted average of impact + fondness (Option A)
+// Impact/fondness are stored on 1-100 scale; we normalize to 1-10 for the formula.
+export function computeHeight(impact: number, fondness: number, isCore: boolean): number {
+  const normImpact = impact / 10;
+  const normFondness = fondness / 10;
+  const blended = normImpact * 0.6 + normFondness * 0.4;
+  if (isCore) {
+    // Castle: height = min(blended * 1.0, 10)
+    return Math.min(blended * 1.0, 10);
+  }
+  // Standard building: height = min(blended * 1.5, 15)
+  return Math.min(blended * 1.5, 15);
+}
+
 interface CityState {
   memories: Memory[];
   buildings: Building[];
@@ -79,6 +93,9 @@ interface CityState {
   previewPosition: { x: number; z: number } | null;
   isLoading: boolean;
   theme: 'day' | 'night';
+  // Timeline state
+  timelineActive: boolean;
+  timelinePercent: number; // 0-100
 }
 
 interface CityActions {
@@ -94,6 +111,10 @@ interface CityActions {
   setPreviewPosition: (pos: { x: number; z: number } | null) => void;
   commitReposition: () => Promise<void>;
   isTileValidForReposition: (x: number, z: number) => boolean;
+  // Timeline actions
+  setTimelineActive: (active: boolean) => void;
+  setTimelinePercent: (percent: number) => void;
+  getVisibleBuildingIds: () => Set<string>;
 }
 
 export type CityStore = CityState & CityActions;
@@ -108,6 +129,8 @@ export const useStore = create<CityStore>((set, get) => ({
   previewPosition: null,
   isLoading: false,
   theme: 'night',
+  timelineActive: false,
+  timelinePercent: 100,
 
   fetchMemories: async () => {
     set({ isLoading: true });
@@ -161,7 +184,7 @@ export const useStore = create<CityStore>((set, get) => ({
             id: m.id,
             memoryId: m.id,
             position: { x: foundPos.x, y: 0, z: foundPos.z },
-            height: isCore ? Math.min(m.impact * 0.15, 15) : Math.min(m.impact * 0.13, 13),
+            height: computeHeight(m.impact, m.fondness, isCore),
             color: CATEGORY_COLORS[m.category],
             isAnimating: false,
             isCore: isCore
@@ -260,7 +283,7 @@ export const useStore = create<CityStore>((set, get) => ({
       id: memory.id,
       memoryId: memory.id,
       position: { x: foundPos.x, y: 0, z: foundPos.z },
-      height: isCore ? Math.min(memory.impact * 0.15, 15) : Math.min(memory.impact * 0.13, 13),
+      height: computeHeight(memory.impact, memory.fondness, isCore),
       color: CATEGORY_COLORS[memory.category],
       isAnimating: true,
       isCore: isCore,
@@ -377,6 +400,28 @@ export const useStore = create<CityStore>((set, get) => ({
 
     const othersBuildings = buildings.filter(b => b.id !== repositioningBuildingId);
     return isValidPosition({ x, z }, othersBuildings, !!building.isCore, gridSize);
+  },
+
+  /* ─── Timeline actions ─── */
+
+  setTimelineActive: (active) => {
+    set({ timelineActive: active, timelinePercent: active ? 100 : 100 });
+  },
+
+  setTimelinePercent: (percent) => {
+    set({ timelinePercent: Math.max(0, Math.min(100, percent)) });
+  },
+
+  getVisibleBuildingIds: () => {
+    const { memories, buildings, timelinePercent } = get();
+    // Sort memories by their createdAt (construction order)
+    const sorted = [...memories].sort((a, b) =>
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+    const total = sorted.length;
+    const visibleCount = Math.round((timelinePercent / 100) * total);
+    const visibleIds = new Set(sorted.slice(0, visibleCount).map(m => m.id));
+    return visibleIds;
   },
 }));
 
