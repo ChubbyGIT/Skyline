@@ -19,7 +19,9 @@ const SlateRoof = ({ color = '#3d4a5c' }: any) => (
 );
 
 /* ── CORNER TOWER (highly detailed) ─────────────────────── */
-const CornerTower = ({ pos, H, R, stone, stoneDark, catColor, theme }: any) => {
+const CornerTower = ({ pos, H, R, stone, stoneDark, catColor, theme, hovered }: any) => {
+  stone     = hovered ? '#FFD700' : stone;
+  stoneDark = hovered ? '#e6b800' : stoneDark;
   const segs = 24;
   const isDark = theme === 'night';
   const slits = Math.max(3, Math.floor(H / 2.2));
@@ -212,7 +214,9 @@ const CornerTower = ({ pos, H, R, stone, stoneDark, catColor, theme }: any) => {
 };
 
 /* ── CURTAIN WALL ────────────────────────────────────────── */
-const Wall = ({ from, to, H, T, stone, stoneDark }: any) => {
+const Wall = ({ from, to, H, T, stone, stoneDark, hovered }: any) => {
+  stone     = hovered ? '#FFD700' : stone;
+  stoneDark = hovered ? '#e6b800' : stoneDark;
   const dx = to[0] - from[0], dz = to[2] - from[2];
   const L = Math.sqrt(dx * dx + dz * dz);
   const mx = (from[0] + to[0]) / 2, mz = (from[2] + to[2]) / 2;
@@ -254,7 +258,9 @@ const Wall = ({ from, to, H, T, stone, stoneDark }: any) => {
 };
 
 /* ── GATEHOUSE ───────────────────────────────────────────── */
-const Gatehouse = ({ pos, H, W, stone, stoneDark, theme }: any) => {
+const Gatehouse = ({ pos, H, W, stone, stoneDark, theme, hovered }: any) => {
+  stone     = hovered ? '#FFD700' : stone;
+  stoneDark = hovered ? '#e6b800' : stoneDark;
   const isDark = theme === 'night';
   const woodColor = isDark ? '#3a2410' : '#5c3a1e';
   return (
@@ -328,6 +334,8 @@ const Gatehouse = ({ pos, H, W, stone, stoneDark, theme }: any) => {
 
 /* ── CENTRAL KEEP ────────────────────────────────────────── */
 const Keep = ({ H, W, stone, stoneDark, catColor, theme, hovered }: any) => {
+  stone     = hovered ? '#FFD700' : stone;
+  stoneDark = hovered ? '#e6b800' : stoneDark;
   const isDark = theme === 'night';
   const winColor = isDark ? '#ffe082' : '#5a8ab5';
   const winEI = isDark ? 1.6 : 0.1;
@@ -493,7 +501,7 @@ export const Castle: React.FC<CastleProps> = ({ data }) => {
       onPointerOver={e => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer'; }}
       onPointerOut={e => { e.stopPropagation(); setHovered(false); document.body.style.cursor = 'auto'; }}
     >
-      {hovered && <pointLight position={[0, keepH * 0.5, 0]} intensity={3} distance={18} color="#FFD700" />}
+
 
       {/* ── Foundation platform ── */}
       <mesh position={[0, 0.08, 0]} receiveShadow>
@@ -514,22 +522,25 @@ export const Castle: React.FC<CastleProps> = ({ data }) => {
 
       {/* ── Corner towers ── */}
       {[[-offset, -offset], [-offset, offset], [offset, -offset], [offset, offset]].map(([x, z], i) => (
-        <CornerTower key={i} pos={[x, 0.36, z]} H={towerH} R={0.65} stone={stone} stoneDark={stoneDark} catColor={catColor} theme={theme} />
+        <CornerTower key={i} pos={[x, 0.36, z]} H={towerH} R={0.65} stone={stone} stoneDark={stoneDark} catColor={catColor} theme={theme} hovered={hovered} />
       ))}
 
       {/* ── Curtain walls ── */}
-      <Wall from={[-offset, 0, -offset]} to={[offset, 0, -offset]}  H={wallH} T={0.36} stone={stone} stoneDark={stoneDark} />
-      <Wall from={[-offset, 0,  offset]} to={[offset, 0,  offset]}  H={wallH} T={0.36} stone={stone} stoneDark={stoneDark} />
-      <Wall from={[-offset, 0, -offset]} to={[-offset, 0, offset]}  H={wallH} T={0.36} stone={stone} stoneDark={stoneDark} />
-      <Wall from={[offset,  0, -offset]} to={[offset,  0, offset]}  H={wallH} T={0.36} stone={stone} stoneDark={stoneDark} />
+      <Wall from={[-offset, 0, -offset]} to={[offset, 0, -offset]}  H={wallH} T={0.36} stone={stone} stoneDark={stoneDark} hovered={hovered} />
+      <Wall from={[-offset, 0,  offset]} to={[offset, 0,  offset]}  H={wallH} T={0.36} stone={stone} stoneDark={stoneDark} hovered={hovered} />
+      <Wall from={[-offset, 0, -offset]} to={[-offset, 0, offset]}  H={wallH} T={0.36} stone={stone} stoneDark={stoneDark} hovered={hovered} />
+      <Wall from={[offset,  0, -offset]} to={[offset,  0, offset]}  H={wallH} T={0.36} stone={stone} stoneDark={stoneDark} hovered={hovered} />
 
       {/* ── Gatehouse (front) ── */}
-      <Gatehouse pos={[0, 0.36, -offset]} H={wallH * 0.95} W={1.8} stone={stone} stoneDark={stoneDark} theme={theme} />
+      <Gatehouse pos={[0, 0.36, -offset]} H={wallH * 0.95} W={1.8} stone={stone} stoneDark={stoneDark} theme={theme} hovered={hovered} />
 
       {/* ── Central keep ── */}
       <group position={[0, 0.36, 0]}>
         <Keep H={keepH} W={2.8} stone={stone} stoneDark={stoneDark} catColor={catColor} theme={theme} hovered={hovered} />
       </group>
+      {hovered && (
+        <pointLight position={[0, keepH * 0.5, 0]} intensity={3} distance={18} color="#FFD700" />
+      )}
 
       {/* ── Courtyard details ── */}
       {/* Well */}
