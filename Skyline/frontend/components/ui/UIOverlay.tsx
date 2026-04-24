@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore, MemoryCategory } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
-import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock } from 'lucide-react';
+import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock, HelpCircle } from 'lucide-react';
 import { CATEGORY_COLORS } from '@/store/useStore';
 
 export const UIOverlay: React.FC = () => {
@@ -46,6 +46,8 @@ export const UIOverlay: React.FC = () => {
     const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
     const [timelinePanelOpen, setTimelinePanelOpen] = useState(false);
     const [exportNotification, setExportNotification] = useState(false);
+    const [isGuideOpen, setIsGuideOpen] = useState(false);
+    const [activeFilter, setActiveFilter] = useState<MemoryCategory | null>(null);
     const [formData, setFormData] = useState({
         title: '',
         caption: '',
@@ -446,8 +448,42 @@ export const UIOverlay: React.FC = () => {
                         <div style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', height: '100%' }}>
                             
                             {/* Header */}
-                            <div style={{ fontSize: '22px', fontWeight: 600, color: '#d1fae5', marginBottom: '20px', letterSpacing: '-0.3px' }}>
-                                Skyline
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                                <div style={{ fontSize: '22px', fontWeight: 600, color: '#d1fae5', letterSpacing: '-0.3px' }}>
+                                    Skyline
+                                </div>
+                                <button
+                                    onClick={() => setIsGuideOpen(true)}
+                                    title="User Guide"
+                                    style={{
+                                        width: '32px',
+                                        height: '32px',
+                                        borderRadius: '10px',
+                                        background: 'rgba(255,255,255,0.06)',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        color: '#6ee7b7',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.25s ease',
+                                        flexShrink: 0,
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = 'rgba(16,185,129,0.15)';
+                                        e.currentTarget.style.borderColor = 'rgba(52,211,153,0.4)';
+                                        e.currentTarget.style.color = '#34d399';
+                                        e.currentTarget.style.boxShadow = '0 0 12px rgba(52,211,153,0.25)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+                                        e.currentTarget.style.color = '#6ee7b7';
+                                        e.currentTarget.style.boxShadow = 'none';
+                                    }}
+                                >
+                                    <HelpCircle size={16} />
+                                </button>
                             </div>
 
                             {/* Stats Card */}
@@ -538,9 +574,101 @@ export const UIOverlay: React.FC = () => {
                                 </svg>
                             </div>
 
+                            {/* Category Filters */}
+                            <div style={{ marginBottom: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    {[
+                                        { key: MemoryCategory.HEALTH, label: 'Health', color: '#FF69B4' },
+                                        { key: MemoryCategory.RELATIONSHIPS, label: 'Relation', color: '#90EE90' },
+                                        { key: MemoryCategory.CAREER, label: 'Career', color: '#4A90E2' },
+                                        { key: MemoryCategory.PERSONAL, label: 'Personal', color: '#FF6B6B' },
+                                        { key: MemoryCategory.OTHER, label: 'Other', color: '#FFD700' },
+                                    ].map((f) => {
+                                        const isActive = activeFilter === f.key;
+                                        return (
+                                            <button
+                                                key={f.key}
+                                                onClick={() => setActiveFilter(f.key)}
+                                                style={{
+                                                    padding: '4px 10px',
+                                                    borderRadius: '20px',
+                                                    fontSize: '10px',
+                                                    fontWeight: 600,
+                                                    fontFamily: 'inherit',
+                                                    letterSpacing: '0.3px',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s ease',
+                                                    border: isActive
+                                                        ? `1px solid ${f.color}80`
+                                                        : '1px solid rgba(255,255,255,0.08)',
+                                                    background: isActive
+                                                        ? `${f.color}20`
+                                                        : 'rgba(255,255,255,0.04)',
+                                                    color: isActive ? f.color : '#6ee7b780',
+                                                    boxShadow: isActive
+                                                        ? `0 0 8px ${f.color}25`
+                                                        : 'none',
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    if (!isActive) {
+                                                        e.currentTarget.style.background = `${f.color}12`;
+                                                        e.currentTarget.style.color = `${f.color}cc`;
+                                                        e.currentTarget.style.borderColor = `${f.color}30`;
+                                                    }
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    if (!isActive) {
+                                                        e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                                                        e.currentTarget.style.color = '#6ee7b780';
+                                                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+                                                    }
+                                                }}
+                                            >
+                                                {f.label}
+                                            </button>
+                                        );
+                                    })}
+                                    {activeFilter && (
+                                        <button
+                                            onClick={() => setActiveFilter(null)}
+                                            style={{
+                                                padding: '4px 8px',
+                                                borderRadius: '20px',
+                                                fontSize: '10px',
+                                                fontWeight: 600,
+                                                fontFamily: 'inherit',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s ease',
+                                                border: '1px solid rgba(239,68,68,0.25)',
+                                                background: 'rgba(239,68,68,0.08)',
+                                                color: '#f87171',
+                                                letterSpacing: '0.3px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '3px',
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.background = 'rgba(239,68,68,0.15)';
+                                                e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.background = 'rgba(239,68,68,0.08)';
+                                                e.currentTarget.style.borderColor = 'rgba(239,68,68,0.25)';
+                                            }}
+                                        >
+                                            <X size={10} /> Clear
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
                             {/* Memory List */}
                             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '4px' }} className="scrollbar-hide">
-                                {memories.filter((m: any) => m.title?.toLowerCase().includes(searchQuery.toLowerCase())).map((memory: any) => {
+                                {memories.filter((m: any) => {
+                                    const matchesSearch = m.title?.toLowerCase().includes(searchQuery.toLowerCase());
+                                    const matchesFilter = !activeFilter || m.category === activeFilter;
+                                    return matchesSearch && matchesFilter;
+                                }).map((memory: any) => {
                                     const isSelected = selectedBuildingId === memory.id;
                                     const building = buildings.find((b: any) => b.memoryId === memory.id);
                                     const accentColor = building?.color || '#34d399';
@@ -1522,6 +1650,331 @@ export const UIOverlay: React.FC = () => {
                     @keyframes fadeInUp {
                         from { opacity: 0; transform: translateX(-50%) translateY(10px); }
                         to { opacity: 1; transform: translateX(-50%) translateY(0); }
+                    }
+                `}</style>
+            )}
+
+            {/* ─── USER GUIDE MODAL ─── */}
+            {isGuideOpen && (
+                <div
+                    className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-auto"
+                    style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', animation: 'guideBackdropIn 0.25s ease-out' }}
+                    onClick={() => setIsGuideOpen(false)}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            width: '680px',
+                            maxWidth: '90vw',
+                            maxHeight: '82vh',
+                            overflowY: 'auto',
+                            borderRadius: '24px',
+                            background: 'rgba(6, 40, 30, 0.95)',
+                            backdropFilter: 'blur(24px)',
+                            border: '1px solid rgba(52,211,153,0.2)',
+                            boxShadow: '0 30px 80px rgba(0,0,0,0.7), 0 0 40px rgba(16,185,129,0.08)',
+                            fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+                            color: '#d1fae5',
+                            position: 'relative',
+                            animation: 'guidePanelIn 0.3s cubic-bezier(0.16,1,0.3,1)',
+                        }}
+                        className="scrollbar-hide"
+                    >
+                        {/* Decorative corner glow */}
+                        <div style={{ position: 'absolute', width: '200px', height: '200px', background: '#10b981', filter: 'blur(120px)', top: '-60px', left: '-60px', opacity: 0.2, pointerEvents: 'none' }} />
+                        <div style={{ position: 'absolute', width: '150px', height: '150px', background: '#34d399', filter: 'blur(100px)', bottom: '-40px', right: '-40px', opacity: 0.12, pointerEvents: 'none' }} />
+
+                        {/* Sticky header */}
+                        <div style={{
+                            position: 'sticky', top: 0, zIndex: 10,
+                            background: 'rgba(6, 40, 30, 0.98)',
+                            borderBottom: '1px solid rgba(255,255,255,0.06)',
+                            padding: '24px 32px 18px 32px',
+                            borderRadius: '24px 24px 0 0',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{
+                                    width: '36px', height: '36px', borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, rgba(52,211,153,0.2), rgba(16,185,129,0.1))',
+                                    border: '1px solid rgba(52,211,153,0.3)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                    <HelpCircle size={18} color="#34d399" />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#d1fae5', letterSpacing: '-0.3px' }}>User Guide</div>
+                                    <div style={{ fontSize: '10px', color: '#6ee7b780', fontWeight: 500, letterSpacing: '1px', textTransform: 'uppercase' }}>Skyline Manual</div>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setIsGuideOpen(false)}
+                                style={{
+                                    width: '32px', height: '32px', borderRadius: '50%',
+                                    border: '1px solid rgba(255,255,255,0.12)',
+                                    background: 'transparent', color: '#6ee7b7',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer', transition: 'all 0.2s',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#d1fae5'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6ee7b7'; }}
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div style={{ padding: '8px 32px 32px 32px', position: 'relative', zIndex: 1 }}>
+
+                            {/* Section 1: Overview */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>🏙️</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Overview</h3>
+                                </div>
+                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: 0 }}>
+                                    Skyline is a memory-tracking and 3D journaling application where your life experiences are visualized as a growing city. Each journal entry appears as a <strong style={{ color: '#6ee7b7' }}>skyscraper</strong>, while your most meaningful memories become <strong style={{ color: '#fcd34d' }}>castles</strong>. Over time, your city evolves into a visual map of your personal journey.
+                                </p>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 2: Creating Entries */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>✏️</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Creating Entries</h3>
+                                </div>
+                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: '0 0 12px 0' }}>
+                                    Each memory you add becomes a structure in your city. For every entry, you can:
+                                </p>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '14px' }}>
+                                    {['Add a Title', 'Write Details / Caption', 'Attach an Image', 'Assign a Category'].map((item) => (
+                                        <div key={item} style={{
+                                            padding: '8px 12px', borderRadius: '10px',
+                                            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)',
+                                            fontSize: '12px', color: '#a7f3d0', fontWeight: 500,
+                                            display: 'flex', alignItems: 'center', gap: '6px',
+                                        }}>
+                                            <span style={{ color: '#34d399', fontSize: '10px' }}>●</span> {item}
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ fontSize: '11px', fontWeight: 600, color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '1.2px', marginBottom: '8px' }}>Entry Categories</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {[
+                                        { name: 'Health', color: '#FF69B4' },
+                                        { name: 'Relationship', color: '#90EE90' },
+                                        { name: 'Career', color: '#4A90E2' },
+                                        { name: 'Personal', color: '#FF6B6B' },
+                                        { name: 'Other', color: '#FFD700' },
+                                    ].map((cat) => (
+                                        <div key={cat.name} style={{
+                                            padding: '5px 12px', borderRadius: '20px',
+                                            background: `${cat.color}18`, border: `1px solid ${cat.color}40`,
+                                            fontSize: '11px', fontWeight: 600, color: cat.color,
+                                        }}>
+                                            {cat.name}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 3: Memory Visualization */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>🏢</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Memory Visualization</h3>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                    <div style={{
+                                        padding: '16px', borderRadius: '14px',
+                                        background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.15)',
+                                    }}>
+                                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#6ee7b7', marginBottom: '8px' }}>🏢 Skyscrapers</div>
+                                        <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px', color: '#d1fae5aa', lineHeight: 1.8 }}>
+                                            <li>Standard journal entries</li>
+                                            <li>1×1 tile footprint</li>
+                                            <li>1 unit spacing required</li>
+                                        </ul>
+                                    </div>
+                                    <div style={{
+                                        padding: '16px', borderRadius: '14px',
+                                        background: 'rgba(252,211,77,0.06)', border: '1px solid rgba(252,211,77,0.15)',
+                                    }}>
+                                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#fcd34d', marginBottom: '8px' }}>🏰 Castles</div>
+                                        <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px', color: '#d1fae5aa', lineHeight: 1.8 }}>
+                                            <li>Core memories only</li>
+                                            <li>5×5 tile footprint</li>
+                                            <li>2 units spacing required</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 4: Impact & Fondness */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>📊</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Impact &amp; Fondness</h3>
+                                </div>
+                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: '0 0 12px 0' }}>
+                                    Each entry is shaped by two parameters that determine building height:
+                                </p>
+                                <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+                                    <div style={{ flex: 1, padding: '12px 14px', borderRadius: '12px', background: 'rgba(103,232,249,0.08)', border: '1px solid rgba(103,232,249,0.2)' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#67e8f9', marginBottom: '4px' }}>Impact</div>
+                                        <div style={{ fontSize: '11px', color: '#d1fae5aa' }}>How significant the memory is</div>
+                                    </div>
+                                    <div style={{ flex: 1, padding: '12px 14px', borderRadius: '12px', background: 'rgba(253,164,175,0.08)', border: '1px solid rgba(253,164,175,0.2)' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#fda4af', marginBottom: '4px' }}>Fondness</div>
+                                        <div style={{ fontSize: '11px', color: '#d1fae5aa' }}>How emotionally meaningful it is</div>
+                                    </div>
+                                </div>
+                                <div style={{
+                                    padding: '10px 14px', borderRadius: '10px',
+                                    background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.15)',
+                                    fontSize: '12px', color: '#a7f3d0', fontWeight: 500, textAlign: 'center',
+                                }}>
+                                    ↑ Higher values = Taller buildings &nbsp;·&nbsp; ↓ Lower values = Shorter buildings
+                                </div>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 5: City Layout */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>🗺️</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>City Layout</h3>
+                                </div>
+                                <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: '#d1fae5cc', lineHeight: 2 }}>
+                                    <li>Buildings are placed <strong style={{ color: '#6ee7b7' }}>automatically</strong> in available space</li>
+                                    <li>The system ensures proper spacing between structures</li>
+                                    <li>Your city grows organically as you add more entries</li>
+                                </ul>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 6: Navigation */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>🖱️</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Navigation Controls</h3>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    {[
+                                        { action: 'Left Click + Drag', desc: 'Move across the city' },
+                                        { action: 'Right Click + Drag', desc: 'Change camera orientation' },
+                                        { action: 'Scroll Wheel', desc: 'Zoom in / out' },
+                                        { action: 'W A S D Keys', desc: 'Keyboard pan' },
+                                    ].map((ctrl) => (
+                                        <div key={ctrl.action} style={{
+                                            display: 'flex', alignItems: 'center', gap: '12px',
+                                            padding: '8px 12px', borderRadius: '10px',
+                                            background: 'rgba(255,255,255,0.03)',
+                                        }}>
+                                            <span style={{
+                                                fontSize: '11px', fontWeight: 700, color: '#34d399',
+                                                padding: '3px 8px', borderRadius: '6px',
+                                                background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.2)',
+                                                whiteSpace: 'nowrap', fontFamily: 'monospace',
+                                            }}>{ctrl.action}</span>
+                                            <span style={{ fontSize: '12px', color: '#d1fae5aa' }}>{ctrl.desc}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 7: Managing Entries */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>🔧</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Managing Entries</h3>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ padding: '12px 14px', borderRadius: '12px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.12)' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#fca5a5', marginBottom: '4px' }}>🗑️ Delete an Entry</div>
+                                        <div style={{ fontSize: '12px', color: '#d1fae5aa' }}>Click a building → select <strong style={{ color: '#ef4444' }}>Demolish</strong> to permanently remove it</div>
+                                    </div>
+                                    <div style={{ padding: '12px 14px', borderRadius: '12px', background: 'rgba(168,85,247,0.06)', border: '1px solid rgba(168,85,247,0.12)' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#c4b5fd', marginBottom: '4px' }}>📜 View Timeline</div>
+                                        <div style={{ fontSize: '12px', color: '#d1fae5aa' }}>Toggle <strong style={{ color: '#a855f7' }}>View Timeline</strong> to see memories in chronological order</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 8: Exporting */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>📥</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Exporting Your City</h3>
+                                </div>
+                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: 0 }}>
+                                    Click <strong style={{ color: '#6ee7b7' }}>Export 2D Map</strong> in the bottom bar to generate an image of your city layout — perfect for sharing or archiving your memory map.
+                                </p>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 9: Tips */}
+                            <div style={{ marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                                    <span style={{ fontSize: '16px' }}>💡</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Tips for Best Use</h3>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    {[
+                                        'Use Impact + Fondness wisely to highlight important memories',
+                                        'Reserve Castles for truly defining moments',
+                                        'Categorize entries properly for better filtering',
+                                        'Regularly export your city to track growth over time',
+                                    ].map((tip, i) => (
+                                        <div key={i} style={{
+                                            padding: '8px 12px', borderRadius: '10px',
+                                            background: 'rgba(255,255,255,0.03)',
+                                            fontSize: '12px', color: '#d1fae5aa', lineHeight: 1.5,
+                                            display: 'flex', alignItems: 'flex-start', gap: '8px',
+                                        }}>
+                                            <span style={{ color: '#fcd34d', fontSize: '10px', marginTop: '3px', flexShrink: 0 }}>★</span>
+                                            {tip}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Footer tagline */}
+                            <div style={{
+                                marginTop: '24px', paddingTop: '16px',
+                                borderTop: '1px solid rgba(255,255,255,0.06)',
+                                textAlign: 'center',
+                            }}>
+                                <p style={{ fontSize: '12px', color: '#6ee7b780', fontStyle: 'italic', lineHeight: 1.6, margin: 0 }}>
+                                    Your memories don't just sit in a list — they rise, expand,<br/>and shape a city that's uniquely yours.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {isGuideOpen && (
+                <style>{`
+                    @keyframes guideBackdropIn {
+                        from { opacity: 0; }
+                        to { opacity: 1; }
+                    }
+                    @keyframes guidePanelIn {
+                        from { opacity: 0; transform: scale(0.95) translateY(12px); }
+                        to { opacity: 1; transform: scale(1) translateY(0); }
                     }
                 `}</style>
             )}
