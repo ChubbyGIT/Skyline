@@ -4,6 +4,7 @@ import React, { useMemo, useCallback, useRef } from 'react';
 import { useStore } from '@/store/useStore';
 import { Building } from './Building';
 import { Castle } from './Castle';
+import { House } from './House';
 import { ThreeEvent } from '@react-three/fiber';
 
 export const City: React.FC = () => {
@@ -145,12 +146,14 @@ export const City: React.FC = () => {
         </mesh>
       ))}
 
-      {/* Buildings & Castles */}
+      {/* Buildings: Castles, Houses & Skyscrapers */}
       {buildings
         .filter(b => !visibleIds || visibleIds.has(b.id))
         .map((b) => (
         b.isCore ? (
           <Castle key={b.id} data={b} />
+        ) : b.height < 3 ? (
+          <House key={b.id} data={b} />
         ) : (
           <Building key={b.id} data={b} />
         )

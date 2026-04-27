@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useStore, MemoryCategory } from '@/store/useStore';
+import { useStore, MemoryCategory, FriendProfile, FriendRequest as FriendRequestType } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
-import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock, HelpCircle } from 'lucide-react';
+import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock, HelpCircle, Users, Search, UserPlus, Mail, ExternalLink, Check, XCircle } from 'lucide-react';
 import { CATEGORY_COLORS } from '@/store/useStore';
+import { FriendsPanel } from './FriendsPanel';
 
 export const UIOverlay: React.FC = () => {
     const router = useRouter();
@@ -33,6 +34,22 @@ export const UIOverlay: React.FC = () => {
         setTimelineActive,
         setTimelinePercent,
         getVisibleBuildingIds,
+        // Friends
+        friends,
+        friendRequests,
+        friendsLoading,
+        currentUserProfile,
+        fetchCurrentProfile,
+        fetchFriends,
+        fetchFriendRequests,
+        searchUsers,
+        sendFriendRequest,
+        acceptFriendRequest,
+        declineFriendRequest,
+        removeFriend,
+        sendEmailInvite,
+        viewMode,
+        viewingUserName,
     } = useStore() as any;
 
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -48,6 +65,16 @@ export const UIOverlay: React.FC = () => {
     const [exportNotification, setExportNotification] = useState(false);
     const [isGuideOpen, setIsGuideOpen] = useState(false);
     const [activeFilter, setActiveFilter] = useState<MemoryCategory | null>(null);
+    // Friends state
+    const [sidebarTab, setSidebarTab] = useState<'city' | 'friends'>('city');
+    const [friendSearchQuery, setFriendSearchQuery] = useState('');
+    const [friendSearchResults, setFriendSearchResults] = useState<FriendProfile[]>([]);
+    const [friendSearching, setFriendSearching] = useState(false);
+    const [selectedFriend, setSelectedFriend] = useState<FriendProfile | null>(null);
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [inviteMessage, setInviteMessage] = useState('');
+    const [inviteSent, setInviteSent] = useState(false);
+    const [pendingRequestIds, setPendingRequestIds] = useState<Set<string>>(new Set());
     const [formData, setFormData] = useState({
         title: '',
         caption: '',
@@ -76,7 +103,50 @@ export const UIOverlay: React.FC = () => {
 
     useEffect(() => {
         fetchMemories();
+        fetchCurrentProfile();
+        fetchFriends();
+        fetchFriendRequests();
     }, []);
+
+    // Debounced friend search
+    useEffect(() => {
+        if (friendSearchQuery.length < 2) {
+            setFriendSearchResults([]);
+            return;
+        }
+        setFriendSearching(true);
+        const timer = setTimeout(async () => {
+            const results = await searchUsers(friendSearchQuery);
+            setFriendSearchResults(results);
+            setFriendSearching(false);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [friendSearchQuery]);
+
+    // Track which users have pending outgoing requests
+    useEffect(() => {
+        const ids = new Set<string>();
+        (friendRequests || []).forEach((r: FriendRequestType) => {
+            if (r.fromUserId === currentUserProfile?.id) ids.add(r.toUserId);
+        });
+        setPendingRequestIds(ids);
+    }, [friendRequests, currentUserProfile]);
+
+    const handleSendFriendRequest = async (userId: string) => {
+        await sendFriendRequest(userId);
+        setPendingRequestIds(prev => new Set(prev).add(userId));
+    };
+
+    const handleSendInvite = async () => {
+        if (!inviteEmail) return;
+        await sendEmailInvite(inviteEmail, inviteMessage);
+        setInviteSent(true);
+        setInviteEmail('');
+        setInviteMessage('');
+        setTimeout(() => setInviteSent(false), 3000);
+    };
+
+    const isFriend = (userId: string) => (friends || []).some((f: FriendProfile) => f.id === userId);
 
     const handleLogout = async () => {
         const { error } = await supabase.auth.signOut();
@@ -486,6 +556,46 @@ export const UIOverlay: React.FC = () => {
                                 </button>
                             </div>
 
+                            {/* ── Tab Bar: City | Friends ── */}
+                            <div style={{
+                                display: 'flex', gap: '4px', marginBottom: '16px',
+                                background: 'rgba(255,255,255,0.04)', borderRadius: '12px',
+                                padding: '3px', border: '1px solid rgba(255,255,255,0.06)',
+                            }}>
+                                {[
+                                    { key: 'city' as const, label: 'City', icon: <Home size={13} /> },
+                                    { key: 'friends' as const, label: 'Friends', icon: <Users size={13} /> },
+                                ].map(tab => {
+                                    const active = sidebarTab === tab.key;
+                                    const reqCount = tab.key === 'friends' ? (friendRequests || []).filter((r: any) => r.toUserId === currentUserProfile?.id && r.status === 'pending').length : 0;
+                                    return (
+                                        <button key={tab.key} onClick={() => setSidebarTab(tab.key)} style={{
+                                            flex: 1, padding: '8px 0', borderRadius: '10px', fontFamily: 'inherit',
+                                            fontSize: '11px', fontWeight: 600, letterSpacing: '0.5px', cursor: 'pointer',
+                                            border: 'none', transition: 'all 0.2s',
+                                            background: active ? 'rgba(52,211,153,0.15)' : 'transparent',
+                                            color: active ? '#34d399' : '#6ee7b780',
+                                            boxShadow: active ? '0 0 12px rgba(52,211,153,0.15)' : 'none',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                            position: 'relative',
+                                        }}>
+                                            {tab.icon} {tab.label}
+                                            {reqCount > 0 && (
+                                                <span style={{
+                                                    position: 'absolute', top: 2, right: 8, width: 16, height: 16,
+                                                    borderRadius: '50%', background: '#ef4444', color: 'white',
+                                                    fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center',
+                                                    justifyContent: 'center', boxShadow: '0 0 8px rgba(239,68,68,0.5)',
+                                                }}>{reqCount}</span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* ── City Tab Content ── */}
+                            {sidebarTab === 'city' && (<>
+
                             {/* Stats Card */}
                             <div style={{
                                 ...glassCard,
@@ -731,9 +841,18 @@ export const UIOverlay: React.FC = () => {
                                 )}
                             </div>
 
+                            </>)}
+
+                            {/* ── Friends Tab Content ── */}
+                            {sidebarTab === 'friends' && (
+                                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                                    <FriendsPanel />
+                                </div>
+                            )}
+
                             {/* Footer */}
                             <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end' }}>
-                                <span style={{ fontSize: '9px', color: '#6ee7b760', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1.5px' }}>Skyline Engine V1.2</span>
+                                <span style={{ fontSize: '9px', color: '#6ee7b760', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1.5px' }}>Skyline Engine V1.3</span>
                             </div>
                         </div>
                     )}

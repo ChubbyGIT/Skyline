@@ -50,6 +50,28 @@ export interface GridTile {
   buildingId?: string;
 }
 
+export interface FriendProfile {
+  id: string;
+  username: string;
+  displayName: string;
+  email: string;
+  avatarUrl?: string;
+  createdAt: string;
+  lastActive: string;
+  lastEntryAt?: string;
+  buildingCount?: number;
+}
+
+export interface FriendRequest {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
+  fromProfile?: FriendProfile;
+  toProfile?: FriendProfile;
+}
+
 interface MemoryInput {
   title: string;
   caption?: string;
@@ -96,6 +118,15 @@ interface CityState {
   // Timeline state
   timelineActive: boolean;
   timelinePercent: number; // 0-100
+  // Friends state
+  friends: FriendProfile[];
+  friendRequests: FriendRequest[];
+  friendsLoading: boolean;
+  currentUserProfile: FriendProfile | null;
+  // View mode (for visiting friend cities)
+  viewMode: boolean;
+  viewingUserId: string | null;
+  viewingUserName: string | null;
 }
 
 interface CityActions {
@@ -115,6 +146,18 @@ interface CityActions {
   setTimelineActive: (active: boolean) => void;
   setTimelinePercent: (percent: number) => void;
   getVisibleBuildingIds: () => Set<string>;
+  // Friends actions
+  fetchCurrentProfile: () => Promise<void>;
+  fetchFriends: () => Promise<void>;
+  fetchFriendRequests: () => Promise<void>;
+  searchUsers: (query: string) => Promise<FriendProfile[]>;
+  sendFriendRequest: (toUserId: string) => Promise<void>;
+  acceptFriendRequest: (requestId: string) => Promise<void>;
+  declineFriendRequest: (requestId: string) => Promise<void>;
+  removeFriend: (friendId: string) => Promise<void>;
+  sendEmailInvite: (email: string, message: string) => Promise<void>;
+  fetchPublicCity: (userId: string) => Promise<void>;
+  setViewMode: (active: boolean, userId?: string, userName?: string) => void;
 }
 
 export type CityStore = CityState & CityActions;
@@ -131,6 +174,15 @@ export const useStore = create<CityStore>((set, get) => ({
   theme: 'night',
   timelineActive: false,
   timelinePercent: 100,
+  // Friends initial state
+  friends: [],
+  friendRequests: [],
+  friendsLoading: false,
+  currentUserProfile: null,
+  // View mode
+  viewMode: false,
+  viewingUserId: null,
+  viewingUserName: null,
 
   fetchMemories: async () => {
     set({ isLoading: true });
@@ -422,6 +474,345 @@ export const useStore = create<CityStore>((set, get) => ({
     const visibleCount = Math.round((timelinePercent / 100) * total);
     const visibleIds = new Set(sorted.slice(0, visibleCount).map(m => m.id));
     return visibleIds;
+  },
+
+  /* ─── Friends actions ─── */
+
+  fetchCurrentProfile: async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .single();
+    if (error) {
+      console.error('Error fetching profile:', error.message);
+      return;
+    }
+    if (data) {
+      set({
+        currentUserProfile: {
+          id: data.id,
+          username: data.username || '',
+          displayName: data.display_name || '',
+          email: data.email || '',
+          avatarUrl: data.avatar_url,
+          createdAt: data.created_at,
+          lastActive: data.last_active,
+          lastEntryAt: data.last_entry_at,
+        }
+      });
+    }
+  },
+
+  fetchFriends: async () => {
+    set({ friendsLoading: true });
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { set({ friendsLoading: false }); return; }
+    const uid = session.user.id;
+
+    // Get friendships where user is either party
+    const { data: fships, error } = await supabase
+      .from('friendships')
+      .select('*')
+      .or(`user_a.eq.${uid},user_b.eq.${uid}`);
+
+    if (error) {
+      console.error('Error fetching friendships:', error.message);
+      set({ friendsLoading: false });
+      return;
+    }
+
+    // Get friend profile IDs
+    const friendIds = (fships || []).map(f => f.user_a === uid ? f.user_b : f.user_a);
+    if (friendIds.length === 0) {
+      set({ friends: [], friendsLoading: false });
+      return;
+    }
+
+    // Fetch friend profiles
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('*')
+      .in('id', friendIds);
+
+    // Get building counts for each friend
+    const friendProfiles: FriendProfile[] = await Promise.all(
+      (profiles || []).map(async (p: any) => {
+        const { count } = await supabase
+          .from('memories')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', p.id);
+        return {
+          id: p.id,
+          username: p.username || '',
+          displayName: p.display_name || '',
+          email: p.email || '',
+          avatarUrl: p.avatar_url,
+          createdAt: p.created_at,
+          lastActive: p.last_active,
+          lastEntryAt: p.last_entry_at,
+          buildingCount: count || 0,
+        };
+      })
+    );
+
+    set({ friends: friendProfiles, friendsLoading: false });
+  },
+
+  fetchFriendRequests: async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const uid = session.user.id;
+
+    const { data, error } = await supabase
+      .from('friend_requests')
+      .select('*')
+      .or(`from_user_id.eq.${uid},to_user_id.eq.${uid}`)
+      .eq('status', 'pending');
+
+    if (error) {
+      console.error('Error fetching friend requests:', error.message);
+      return;
+    }
+
+    // Enrich with profiles
+    const allUserIds = new Set<string>();
+    (data || []).forEach((r: any) => { allUserIds.add(r.from_user_id); allUserIds.add(r.to_user_id); });
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('*')
+      .in('id', Array.from(allUserIds));
+
+    const profileMap: Record<string, any> = {};
+    (profiles || []).forEach((p: any) => { profileMap[p.id] = p; });
+
+    const enriched: FriendRequest[] = (data || []).map((r: any) => ({
+      id: r.id,
+      fromUserId: r.from_user_id,
+      toUserId: r.to_user_id,
+      status: r.status,
+      createdAt: r.created_at,
+      fromProfile: profileMap[r.from_user_id] ? {
+        id: profileMap[r.from_user_id].id,
+        username: profileMap[r.from_user_id].username || '',
+        displayName: profileMap[r.from_user_id].display_name || '',
+        email: profileMap[r.from_user_id].email || '',
+        avatarUrl: profileMap[r.from_user_id].avatar_url,
+        createdAt: profileMap[r.from_user_id].created_at,
+        lastActive: profileMap[r.from_user_id].last_active,
+      } : undefined,
+      toProfile: profileMap[r.to_user_id] ? {
+        id: profileMap[r.to_user_id].id,
+        username: profileMap[r.to_user_id].username || '',
+        displayName: profileMap[r.to_user_id].display_name || '',
+        email: profileMap[r.to_user_id].email || '',
+        avatarUrl: profileMap[r.to_user_id].avatar_url,
+        createdAt: profileMap[r.to_user_id].created_at,
+        lastActive: profileMap[r.to_user_id].last_active,
+      } : undefined,
+    }));
+
+    set({ friendRequests: enriched });
+  },
+
+  searchUsers: async (query: string) => {
+    if (!query || query.length < 2) return [];
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return [];
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .or(`username.ilike.%${query}%,email.ilike.%${query}%,display_name.ilike.%${query}%`)
+      .neq('id', session.user.id)
+      .limit(10);
+
+    if (error) {
+      console.error('Error searching users:', error.message);
+      return [];
+    }
+
+    return (data || []).map((p: any) => ({
+      id: p.id,
+      username: p.username || '',
+      displayName: p.display_name || '',
+      email: p.email || '',
+      avatarUrl: p.avatar_url,
+      createdAt: p.created_at,
+      lastActive: p.last_active,
+    }));
+  },
+
+  sendFriendRequest: async (toUserId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const { error } = await supabase
+      .from('friend_requests')
+      .insert({ from_user_id: session.user.id, to_user_id: toUserId });
+
+    if (error) {
+      console.error('Error sending friend request:', error.message);
+      return;
+    }
+    await get().fetchFriendRequests();
+  },
+
+  acceptFriendRequest: async (requestId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    // Get the request
+    const { data: req } = await supabase
+      .from('friend_requests')
+      .select('*')
+      .eq('id', requestId)
+      .single();
+
+    if (!req) return;
+
+    // Update request status
+    await supabase
+      .from('friend_requests')
+      .update({ status: 'accepted' })
+      .eq('id', requestId);
+
+    // Create friendship (order by UUID to avoid duplicates)
+    const [a, b] = [req.from_user_id, req.to_user_id].sort();
+    await supabase
+      .from('friendships')
+      .insert({ user_a: a, user_b: b });
+
+    await get().fetchFriends();
+    await get().fetchFriendRequests();
+  },
+
+  declineFriendRequest: async (requestId: string) => {
+    await supabase
+      .from('friend_requests')
+      .update({ status: 'declined' })
+      .eq('id', requestId);
+    await get().fetchFriendRequests();
+  },
+
+  removeFriend: async (friendId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const uid = session.user.id;
+    const [a, b] = [uid, friendId].sort();
+
+    await supabase
+      .from('friendships')
+      .delete()
+      .eq('user_a', a)
+      .eq('user_b', b);
+
+    await get().fetchFriends();
+  },
+
+  sendEmailInvite: async (email: string, message: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    // Store invitation in DB
+    await supabase
+      .from('invitations')
+      .insert({
+        inviter_id: session.user.id,
+        invitee_email: email,
+        message: message || 'Come check out my Skyline city!',
+      });
+
+    // Get inviter name from profile
+    const { currentUserProfile } = get();
+    const inviterName = currentUserProfile?.displayName || currentUserProfile?.username || 'A Skyline user';
+
+    // Send email via Supabase Edge Function
+    try {
+      const { error } = await supabase.functions.invoke('send-invite', {
+        body: {
+          to_email: email,
+          inviter_name: inviterName,
+          message: message || '',
+        },
+      });
+      if (error) throw error;
+      console.log(`Invitation email sent to ${email}`);
+    } catch (err) {
+      console.warn('Email send failed (invite stored in DB):', err);
+    }
+  },
+
+  fetchPublicCity: async (userId: string) => {
+    set({ isLoading: true });
+    const { data, error } = await supabase
+      .from('memories')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching public city:', error.message);
+      set({ isLoading: false });
+      return;
+    }
+
+    const loadedMemories = (data as any[]).map(m => ({
+      id: m.id,
+      userId: m.user_id,
+      title: m.title,
+      caption: m.caption || '',
+      category: m.category as MemoryCategory,
+      impact: m.impact,
+      fondness: m.fondness,
+      date: m.date,
+      createdAt: m.created_at,
+      updatedAt: m.updated_at,
+      imageUrl: m.image_url,
+      pos_x: m.pos_x,
+      pos_z: m.pos_z
+    })) as Memory[];
+
+    let initialGridSize = Math.max(5, Math.ceil(Math.sqrt(loadedMemories.length * 4)));
+    const builtBuildings: Building[] = [];
+
+    for (const m of loadedMemories) {
+      const isCore = m.title.startsWith('[CORE]');
+      let foundPos;
+      
+      if (m.pos_x !== undefined && m.pos_x !== null && m.pos_z !== undefined && m.pos_z !== null) {
+        foundPos = { x: m.pos_x, z: m.pos_z };
+        initialGridSize = Math.max(initialGridSize, foundPos.x + 3, foundPos.z + 3);
+      } else {
+        foundPos = findValidPosition(builtBuildings, initialGridSize, isCore);
+        while (!foundPos) {
+          initialGridSize += 2;
+          foundPos = findValidPosition(builtBuildings, initialGridSize, isCore);
+        }
+      }
+
+      builtBuildings.push({
+        id: m.id,
+        memoryId: m.id,
+        position: { x: foundPos.x, y: 0, z: foundPos.z },
+        height: computeHeight(m.impact, m.fondness, isCore),
+        color: CATEGORY_COLORS[m.category],
+        isAnimating: false,
+        isCore: isCore
+      });
+    }
+
+    set({ memories: loadedMemories, buildings: builtBuildings, isLoading: false, gridSize: initialGridSize });
+  },
+
+  setViewMode: (active, userId, userName) => {
+    set({
+      viewMode: active,
+      viewingUserId: userId || null,
+      viewingUserName: userName || null,
+    });
   },
 }));
 
