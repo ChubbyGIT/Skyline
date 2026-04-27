@@ -131,10 +131,17 @@ CREATE POLICY "Users can view their invitations" ON invitations
 CREATE POLICY "Users can create invitations" ON invitations
   FOR INSERT WITH CHECK (auth.uid() = inviter_id);
 
--- Memories: allow public reads for friend city viewing
+-- Memories: allow reads by owner OR friends only
 -- (adds a new policy alongside existing RLS)
-CREATE POLICY "Public can read memories for city viewing" ON memories
-  FOR SELECT USING (true);
+CREATE POLICY "Friends can read memories for city viewing" ON memories
+  FOR SELECT USING (
+    auth.uid() = user_id
+    OR EXISTS (
+      SELECT 1 FROM friendships
+      WHERE (user_a = auth.uid() AND user_b = memories.user_id)
+         OR (user_b = auth.uid() AND user_a = memories.user_id)
+    )
+  );
 
 -- ╔════════════════════════════════════════════╗
 -- ║  6. INDEXES                                ║

@@ -724,25 +724,6 @@ export const useStore = create<CityStore>((set, get) => ({
         invitee_email: email,
         message: message || 'Come check out my Skyline city!',
       });
-
-    // Get inviter name from profile
-    const { currentUserProfile } = get();
-    const inviterName = currentUserProfile?.displayName || currentUserProfile?.username || 'A Skyline user';
-
-    // Send email via Supabase Edge Function
-    try {
-      const { error } = await supabase.functions.invoke('send-invite', {
-        body: {
-          to_email: email,
-          inviter_name: inviterName,
-          message: message || '',
-        },
-      });
-      if (error) throw error;
-      console.log(`Invitation email sent to ${email}`);
-    } catch (err) {
-      console.warn('Email send failed (invite stored in DB):', err);
-    }
   },
 
   fetchPublicCity: async (userId: string) => {

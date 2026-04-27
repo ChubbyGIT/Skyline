@@ -205,26 +205,28 @@ export const FriendsPanel: React.FC = () => {
       )}
       {searching && <div style={{ fontSize: 11, color: '#6ee7b760', marginBottom: 12, textAlign: 'center' }}>Searching...</div>}
 
-      {/* No results — invite by email */}
+      {/* No results — copy invite link */}
       {query.length >= 2 && !searching && results.length === 0 && (
         <div style={{ ...glass, padding: 14, marginBottom: 14 }}>
-          <div style={{ fontSize: 12, color: '#d1fae5cc', marginBottom: 10 }}>No users found. Send an invite?</div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input type="email" placeholder="Email address" value={inviteEmail}
-              onChange={e => setInviteEmail(e.target.value)}
-              style={{
-                flex: 1, padding: '6px 10px', borderRadius: 8, fontSize: 11, boxSizing: 'border-box',
-                background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                color: '#d1fae5', outline: 'none', fontFamily: 'inherit',
-              }} />
-            <button onClick={handleInvite} style={{
-              padding: '6px 12px', borderRadius: 8, fontSize: 10, fontWeight: 600,
-              background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.3)',
-              color: '#34d399', cursor: 'pointer', fontFamily: 'inherit',
-              display: 'flex', alignItems: 'center', gap: 4,
-            }}><Mail size={10} /> Invite</button>
-          </div>
-          {inviteSent && <div style={{ fontSize: 10, color: '#34d399', marginTop: 8 }}>✓ Invitation sent!</div>}
+          <div style={{ fontSize: 12, color: '#d1fae5cc', marginBottom: 10 }}>No users found. Share Skyline with them!</div>
+          <button onClick={async () => {
+            const link = window.location.origin;
+            await navigator.clipboard.writeText(`Join me on Skyline — build your memory city! ${link}`);
+            // Also store in DB if they entered an email-like query
+            if (query.includes('@')) {
+              await sendEmailInvite(query, 'Come check out my Skyline city!');
+            }
+            setInviteSent(true);
+            setTimeout(() => setInviteSent(false), 3000);
+          }} style={{
+            width: '100%', padding: '8px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600,
+            background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.3)',
+            color: '#34d399', cursor: 'pointer', fontFamily: 'inherit',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            transition: 'all 0.2s',
+          }}>
+            {inviteSent ? <><Check size={12} /> Copied!</> : <><ExternalLink size={12} /> Copy Invite Link</>}
+          </button>
         </div>
       )}
 
