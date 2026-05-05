@@ -1,14 +1,11 @@
-/** Triggers Google OAuth → lands on /city (same domain) */
+import { supabase } from './supabase';
+
+/** Triggers Google OAuth → callback exchanges code → lands on /city */
 export async function loginWithGoogle() {
-  const { createClient } = await import('@supabase/supabase-js');
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
   // Preserve invite_token through OAuth flow
-  let redirectUrl = `${origin}/city`;
+  let redirectUrl = `${origin}/auth/callback`;
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search);
     const inviteToken = params.get('invite_token');
@@ -23,4 +20,5 @@ export async function loginWithGoogle() {
   });
   if (error) console.error('OAuth error:', error.message);
 }
+
 

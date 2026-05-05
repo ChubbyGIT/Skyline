@@ -21,67 +21,40 @@ const BackgroundMusic = dynamic(
   { ssr: false, loading: () => null }
 );
 
-/** Handles invite token from URL — must be inside Suspense.
- *  Uses onAuthStateChange so new users returning from OAuth
- *  aren't bounced before the hash-fragment token exchange finishes. */
+/** Handles auth guard + invite token from URL — must be inside Suspense.
+ *  With the /auth/callback PKCE exchange route, the session is already
+ *  established by the time the user lands here. */
 function InviteHandler() {
   const searchParams = useSearchParams();
   const processInviteToken = useStore(s => s.processInviteToken);
 
   useEffect(() => {
-    let redirectTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
 
-    // Check if we're in the middle of an OAuth redirect (hash contains tokens)
-    const hasOAuthHash = typeof window !== 'undefined' &&
-      window.location.hash.includes('access_token');
+    const checkAuth = async () => {
+      // Small delay to let Supabase client hydrate session from cookies/localStorage
+      await new Promise(r => setTimeout(r, 500));
+      if (cancelled) return;
 
-    // Listen for auth state changes — this fires once the hash
-    // fragment has been exchanged for a session (new users) or
-    // immediately if a session already exists in localStorage.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        // Clear the safety redirect since auth resolved
-        if (redirectTimer) {
-          clearTimeout(redirectTimer);
-          redirectTimer = null;
-        }
-
-        if (!session) {
-          // If we're in the middle of an OAuth hash exchange,
-          // the INITIAL_SESSION fires with null before SIGNED_IN.
-          // Don't redirect yet — wait for the real auth event.
-          if (hasOAuthHash && event === 'INITIAL_SESSION') return;
-
-          // Auth truly resolved with no session → send to landing page
-          window.location.href = '/';
-          return;
-        }
-
-        // Session is valid — process invite token if present
-        const inviteToken = searchParams.get('invite_token');
-        if (inviteToken) {
-          await processInviteToken(inviteToken);
-          const url = new URL(window.location.href);
-          url.searchParams.delete('invite_token');
-          window.history.replaceState({}, '', url.pathname);
-        }
-      }
-    );
-
-    // Safety net: if no auth event fires within 10 seconds (e.g.
-    // someone navigated directly to /city without logging in),
-    // check the session manually and redirect if needed.
-    redirectTimer = setTimeout(async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
+        // No session after hydration — redirect to landing page
         window.location.href = '/';
+        return;
       }
-    }, 10000);
 
-    return () => {
-      subscription.unsubscribe();
-      if (redirectTimer) clearTimeout(redirectTimer);
+      // Session is valid — process invite token if present
+      const inviteToken = searchParams.get('invite_token');
+      if (inviteToken) {
+        await processInviteToken(inviteToken);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('invite_token');
+        window.history.replaceState({}, '', url.pathname);
+      }
     };
+
+    checkAuth();
+    return () => { cancelled = true; };
   }, []);
 
   return null;
