@@ -4,18 +4,33 @@ import React, { useMemo, useCallback, useRef } from 'react';
 import { useStore } from '@/store/useStore';
 import { Building } from './Building';
 import { Castle } from './Castle';
-import { ThreeEvent } from '@react-three/fiber';
+import { House } from './House';
+import { PersonNPC } from './PersonNPC';
+import { ThreeEvent, useFrame } from '@react-three/fiber';
 
 export const City: React.FC = () => {
-  const {
-    buildings, gridSize, isRepositioning, repositioningBuildingId,
-    previewPosition, selectedBuildingId, theme,
-    repositionBuilding, setPreviewPosition, commitReposition,
-    isTileValidForReposition,
-    timelineActive, timelinePercent, memories,
-  } = useStore();
+  const buildings = useStore(s => s.buildings);
+  const gridSize = useStore(s => s.gridSize);
+  const isRepositioning = useStore(s => s.isRepositioning);
+  const repositioningBuildingId = useStore(s => s.repositioningBuildingId);
+  const previewPosition = useStore(s => s.previewPosition);
+  const selectedBuildingId = useStore(s => s.selectedBuildingId);
+  const theme = useStore(s => s.theme);
+  const setPreviewPosition = useStore(s => s.setPreviewPosition);
+  const commitReposition = useStore(s => s.commitReposition);
+  const isTileValidForReposition = useStore(s => s.isTileValidForReposition);
+  const timelineActive = useStore(s => s.timelineActive);
+  const timelinePercent = useStore(s => s.timelinePercent);
+  const memories = useStore(s => s.memories);
+  const npcUsers = useStore(s => s.npcUsers);
+  const tickNPCMovement = useStore(s => s.tickNPCMovement);
 
-  // When timeline is active, compute which buildings are visible
+  // Tick NPC movement each frame
+  useFrame((_, delta) => {
+    tickNPCMovement(Math.min(delta, 0.05)); // Cap delta to avoid huge jumps
+  });
+
+  // When timeline is active, compute which buildings are visible based on construction order
   const visibleIds = useMemo(() => {
     if (!timelineActive) return null;
     // Sort memories by createdAt (construction order)
@@ -139,15 +154,22 @@ export const City: React.FC = () => {
         </mesh>
       ))}
 
-      {/* Buildings & Castles */}
+      {/* Buildings: Castles, Houses & Skyscrapers */}
       {buildings
         .filter(b => !visibleIds || visibleIds.has(b.id))
         .map((b) => (
         b.isCore ? (
           <Castle key={b.id} data={b} />
+        ) : b.height < 3 ? (
+          <House key={b.id} data={b} />
         ) : (
           <Building key={b.id} data={b} />
         )
+      ))}
+
+      {/* NPC Users (Person NPCs) */}
+      {npcUsers.map((npc) => (
+        <PersonNPC key={npc.id} data={npc} />
       ))}
     </group>
   );

@@ -50,6 +50,43 @@ export interface GridTile {
   buildingId?: string;
 }
 
+export interface FriendProfile {
+  id: string;
+  username: string;
+  displayName: string;
+  email: string;
+  avatarUrl?: string;
+  createdAt: string;
+  lastActive: string;
+  lastEntryAt?: string;
+  buildingCount?: number;
+}
+
+export interface FriendRequest {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
+  fromProfile?: FriendProfile;
+  toProfile?: FriendProfile;
+}
+
+export interface CityUser {
+  id: string;
+  ownerId?: string;
+  name: string;
+  description: string;
+  gender: 'male' | 'female';
+  color: string;
+  position: Vector3Position;
+  movementState: 'idle' | 'walking';
+  // Internal movement state (not persisted)
+  _targetX?: number;
+  _targetZ?: number;
+  _waitUntil?: number;
+}
+
 interface MemoryInput {
   title: string;
   caption?: string;
@@ -96,6 +133,19 @@ interface CityState {
   // Timeline state
   timelineActive: boolean;
   timelinePercent: number; // 0-100
+  // Friends state
+  friends: FriendProfile[];
+  friendRequests: FriendRequest[];
+  friendsLoading: boolean;
+  currentUserProfile: FriendProfile | null;
+  // View mode (for visiting friend cities)
+  viewMode: boolean;
+  viewingUserId: string | null;
+  viewingUserName: string | null;
+  // NPC Users
+  npcUsers: CityUser[];
+  selectedNPCId: string | null;
+  isUserModalOpen: boolean;
 }
 
 interface CityActions {
@@ -115,6 +165,26 @@ interface CityActions {
   setTimelineActive: (active: boolean) => void;
   setTimelinePercent: (percent: number) => void;
   getVisibleBuildingIds: () => Set<string>;
+  // Friends actions
+  fetchCurrentProfile: () => Promise<void>;
+  fetchFriends: () => Promise<void>;
+  fetchFriendRequests: () => Promise<void>;
+  searchUsers: (query: string) => Promise<FriendProfile[]>;
+  sendFriendRequest: (toUserId: string) => Promise<void>;
+  acceptFriendRequest: (requestId: string) => Promise<void>;
+  declineFriendRequest: (requestId: string) => Promise<void>;
+  removeFriend: (friendId: string) => Promise<void>;
+  sendEmailInvite: (email: string, message: string) => Promise<void>;
+  fetchPublicCity: (userId: string) => Promise<void>;
+  setViewMode: (active: boolean, userId?: string, userName?: string) => void;
+  // NPC User actions
+  fetchNPCUsers: () => Promise<void>;
+  addNPCUser: (input: { name: string; description: string; gender: 'male' | 'female' }) => Promise<void>;
+  removeNPCUser: (id: string) => Promise<void>;
+  updateNPCColor: (id: string, color: string) => Promise<void>;
+  selectNPC: (id: string | null) => void;
+  setUserModalOpen: (open: boolean) => void;
+  tickNPCMovement: (delta: number) => void;
 }
 
 export type CityStore = CityState & CityActions;
@@ -131,6 +201,19 @@ export const useStore = create<CityStore>((set, get) => ({
   theme: 'night',
   timelineActive: false,
   timelinePercent: 100,
+  // Friends initial state
+  friends: [],
+  friendRequests: [],
+  friendsLoading: false,
+  currentUserProfile: null,
+  // View mode
+  viewMode: false,
+  viewingUserId: null,
+  viewingUserName: null,
+  // NPC Users
+  npcUsers: [],
+  selectedNPCId: null,
+  isUserModalOpen: false,
 
   fetchMemories: async () => {
     set({ isLoading: true });
@@ -423,6 +506,547 @@ export const useStore = create<CityStore>((set, get) => ({
     const visibleIds = new Set(sorted.slice(0, visibleCount).map(m => m.id));
     return visibleIds;
   },
+
+  /* ─── Friends actions ─── */
+
+  fetchCurrentProfile: async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .single();
+    if (error) {
+      console.error('Error fetching profile:', error.message);
+      return;
+    }
+    if (data) {
+      set({
+        currentUserProfile: {
+          id: data.id,
+          username: data.username || '',
+          displayName: data.display_name || '',
+          email: data.email || '',
+          avatarUrl: data.avatar_url,
+          createdAt: data.created_at,
+          lastActive: data.last_active,
+          lastEntryAt: data.last_entry_at,
+        }
+      });
+    }
+  },
+
+  fetchFriends: async () => {
+    set({ friendsLoading: true });
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { set({ friendsLoading: false }); return; }
+    const uid = session.user.id;
+
+    // Get friendships where user is either party
+    const { data: fships, error } = await supabase
+      .from('friendships')
+      .select('*')
+      .or(`user_a.eq.${uid},user_b.eq.${uid}`);
+
+    if (error) {
+      console.error('Error fetching friendships:', error.message);
+      set({ friendsLoading: false });
+      return;
+    }
+
+    // Get friend profile IDs
+    const friendIds = (fships || []).map(f => f.user_a === uid ? f.user_b : f.user_a);
+    if (friendIds.length === 0) {
+      set({ friends: [], friendsLoading: false });
+      return;
+    }
+
+    // Fetch friend profiles
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('*')
+      .in('id', friendIds);
+
+    // Get building counts for each friend
+    const friendProfiles: FriendProfile[] = await Promise.all(
+      (profiles || []).map(async (p: any) => {
+        const { count } = await supabase
+          .from('memories')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', p.id);
+        return {
+          id: p.id,
+          username: p.username || '',
+          displayName: p.display_name || '',
+          email: p.email || '',
+          avatarUrl: p.avatar_url,
+          createdAt: p.created_at,
+          lastActive: p.last_active,
+          lastEntryAt: p.last_entry_at,
+          buildingCount: count || 0,
+        };
+      })
+    );
+
+    set({ friends: friendProfiles, friendsLoading: false });
+  },
+
+  fetchFriendRequests: async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const uid = session.user.id;
+
+    const { data, error } = await supabase
+      .from('friend_requests')
+      .select('*')
+      .or(`from_user_id.eq.${uid},to_user_id.eq.${uid}`)
+      .eq('status', 'pending');
+
+    if (error) {
+      console.error('Error fetching friend requests:', error.message);
+      return;
+    }
+
+    // Enrich with profiles
+    const allUserIds = new Set<string>();
+    (data || []).forEach((r: any) => { allUserIds.add(r.from_user_id); allUserIds.add(r.to_user_id); });
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('*')
+      .in('id', Array.from(allUserIds));
+
+    const profileMap: Record<string, any> = {};
+    (profiles || []).forEach((p: any) => { profileMap[p.id] = p; });
+
+    const enriched: FriendRequest[] = (data || []).map((r: any) => ({
+      id: r.id,
+      fromUserId: r.from_user_id,
+      toUserId: r.to_user_id,
+      status: r.status,
+      createdAt: r.created_at,
+      fromProfile: profileMap[r.from_user_id] ? {
+        id: profileMap[r.from_user_id].id,
+        username: profileMap[r.from_user_id].username || '',
+        displayName: profileMap[r.from_user_id].display_name || '',
+        email: profileMap[r.from_user_id].email || '',
+        avatarUrl: profileMap[r.from_user_id].avatar_url,
+        createdAt: profileMap[r.from_user_id].created_at,
+        lastActive: profileMap[r.from_user_id].last_active,
+      } : undefined,
+      toProfile: profileMap[r.to_user_id] ? {
+        id: profileMap[r.to_user_id].id,
+        username: profileMap[r.to_user_id].username || '',
+        displayName: profileMap[r.to_user_id].display_name || '',
+        email: profileMap[r.to_user_id].email || '',
+        avatarUrl: profileMap[r.to_user_id].avatar_url,
+        createdAt: profileMap[r.to_user_id].created_at,
+        lastActive: profileMap[r.to_user_id].last_active,
+      } : undefined,
+    }));
+
+    set({ friendRequests: enriched });
+  },
+
+  searchUsers: async (query: string) => {
+    if (!query || query.length < 2) return [];
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return [];
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .or(`username.ilike.%${query}%,email.ilike.%${query}%,display_name.ilike.%${query}%`)
+      .neq('id', session.user.id)
+      .limit(10);
+
+    if (error) {
+      console.error('Error searching users:', error.message);
+      return [];
+    }
+
+    return (data || []).map((p: any) => ({
+      id: p.id,
+      username: p.username || '',
+      displayName: p.display_name || '',
+      email: p.email || '',
+      avatarUrl: p.avatar_url,
+      createdAt: p.created_at,
+      lastActive: p.last_active,
+    }));
+  },
+
+  sendFriendRequest: async (toUserId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const { error } = await supabase
+      .from('friend_requests')
+      .insert({ from_user_id: session.user.id, to_user_id: toUserId });
+
+    if (error) {
+      console.error('Error sending friend request:', error.message);
+      return;
+    }
+    await get().fetchFriendRequests();
+  },
+
+  acceptFriendRequest: async (requestId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    // Get the request
+    const { data: req } = await supabase
+      .from('friend_requests')
+      .select('*')
+      .eq('id', requestId)
+      .single();
+
+    if (!req) return;
+
+    // Update request status
+    await supabase
+      .from('friend_requests')
+      .update({ status: 'accepted' })
+      .eq('id', requestId);
+
+    // Create friendship (order by UUID to avoid duplicates)
+    const [a, b] = [req.from_user_id, req.to_user_id].sort();
+    await supabase
+      .from('friendships')
+      .insert({ user_a: a, user_b: b });
+
+    await get().fetchFriends();
+    await get().fetchFriendRequests();
+  },
+
+  declineFriendRequest: async (requestId: string) => {
+    await supabase
+      .from('friend_requests')
+      .update({ status: 'declined' })
+      .eq('id', requestId);
+    await get().fetchFriendRequests();
+  },
+
+  removeFriend: async (friendId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const uid = session.user.id;
+    const [a, b] = [uid, friendId].sort();
+
+    await supabase
+      .from('friendships')
+      .delete()
+      .eq('user_a', a)
+      .eq('user_b', b);
+
+    await get().fetchFriends();
+  },
+
+  sendEmailInvite: async (email: string, message: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    // Store invitation in DB
+    await supabase
+      .from('invitations')
+      .insert({
+        inviter_id: session.user.id,
+        invitee_email: email,
+        message: message || 'Come check out my Skyline city!',
+      });
+  },
+
+  fetchPublicCity: async (userId: string) => {
+    set({ isLoading: true });
+    const { data, error } = await supabase
+      .from('memories')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching public city:', error.message);
+      set({ isLoading: false });
+      return;
+    }
+
+    const loadedMemories = (data as any[]).map(m => ({
+      id: m.id,
+      userId: m.user_id,
+      title: m.title,
+      caption: m.caption || '',
+      category: m.category as MemoryCategory,
+      impact: m.impact,
+      fondness: m.fondness,
+      date: m.date,
+      createdAt: m.created_at,
+      updatedAt: m.updated_at,
+      imageUrl: m.image_url,
+      pos_x: m.pos_x,
+      pos_z: m.pos_z
+    })) as Memory[];
+
+    let initialGridSize = Math.max(5, Math.ceil(Math.sqrt(loadedMemories.length * 4)));
+    const builtBuildings: Building[] = [];
+
+    for (const m of loadedMemories) {
+      const isCore = m.title.startsWith('[CORE]');
+      let foundPos;
+      
+      if (m.pos_x !== undefined && m.pos_x !== null && m.pos_z !== undefined && m.pos_z !== null) {
+        foundPos = { x: m.pos_x, z: m.pos_z };
+        initialGridSize = Math.max(initialGridSize, foundPos.x + 3, foundPos.z + 3);
+      } else {
+        foundPos = findValidPosition(builtBuildings, initialGridSize, isCore);
+        while (!foundPos) {
+          initialGridSize += 2;
+          foundPos = findValidPosition(builtBuildings, initialGridSize, isCore);
+        }
+      }
+
+      builtBuildings.push({
+        id: m.id,
+        memoryId: m.id,
+        position: { x: foundPos.x, y: 0, z: foundPos.z },
+        height: computeHeight(m.impact, m.fondness, isCore),
+        color: CATEGORY_COLORS[m.category],
+        isAnimating: false,
+        isCore: isCore
+      });
+    }
+
+    set({ memories: loadedMemories, buildings: builtBuildings, isLoading: false, gridSize: initialGridSize });
+  },
+
+  setViewMode: (active, userId, userName) => {
+    set({
+      viewMode: active,
+      viewingUserId: userId || null,
+      viewingUserName: userName || null,
+    });
+  },
+
+  /* ─── NPC User actions ─── */
+
+  fetchNPCUsers: async () => {
+    const { data, error } = await supabase
+      .from('city_users')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching NPC users:', error.message);
+      return;
+    }
+
+    const users: CityUser[] = (data || []).map((u: any) => ({
+      id: u.id,
+      ownerId: u.owner_id,
+      name: u.name,
+      description: u.description || '',
+      gender: u.gender as 'male' | 'female',
+      color: u.color,
+      position: { x: u.pos_x, y: u.pos_y || 0, z: u.pos_z },
+      movementState: 'idle' as const,
+      _targetX: u.pos_x,
+      _targetZ: u.pos_z,
+      _waitUntil: 0,
+    }));
+
+    set({ npcUsers: users });
+  },
+
+  addNPCUser: async (input) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const { buildings, gridSize, npcUsers } = get();
+    // Find a valid spawn position (not on a building, not on another NPC)
+    const pos = findNPCSpawnPosition(buildings, npcUsers, gridSize);
+    if (!pos) {
+      console.error('No valid spawn position found for NPC');
+      return;
+    }
+
+    // Random vibrant color for t-shirt
+    const colors = [
+      '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6',
+      '#1abc9c', '#e67e22', '#e84393', '#00cec9', '#6c5ce7',
+      '#fd79a8', '#00b894', '#fdcb6e', '#74b9ff', '#a29bfe',
+    ];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+
+    const { data, error } = await supabase
+      .from('city_users')
+      .insert({
+        owner_id: session.user.id,
+        name: input.name,
+        description: input.description,
+        gender: input.gender,
+        color,
+        pos_x: pos.x,
+        pos_y: 0,
+        pos_z: pos.z,
+      })
+      .select();
+
+    if (error) {
+      console.error('Error creating NPC user:', error.message);
+      return;
+    }
+
+    const u = data[0];
+    const newUser: CityUser = {
+      id: u.id,
+      ownerId: u.owner_id,
+      name: u.name,
+      description: u.description || '',
+      gender: u.gender as 'male' | 'female',
+      color: u.color,
+      position: { x: u.pos_x, y: 0, z: u.pos_z },
+      movementState: 'idle',
+      _targetX: u.pos_x,
+      _targetZ: u.pos_z,
+      _waitUntil: 0,
+    };
+
+    set({ npcUsers: [...get().npcUsers, newUser] });
+  },
+
+  removeNPCUser: async (id) => {
+    const { error } = await supabase
+      .from('city_users')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting NPC user:', error.message);
+      return;
+    }
+
+    set((s) => ({
+      npcUsers: s.npcUsers.filter(u => u.id !== id),
+      selectedNPCId: s.selectedNPCId === id ? null : s.selectedNPCId,
+    }));
+  },
+
+  updateNPCColor: async (id, color) => {
+    const { error } = await supabase
+      .from('city_users')
+      .update({ color, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error updating NPC color:', error.message);
+      return;
+    }
+
+    set((s) => ({
+      npcUsers: s.npcUsers.map(u => u.id === id ? { ...u, color } : u),
+    }));
+  },
+
+  selectNPC: (id) => set({ selectedNPCId: id, selectedBuildingId: null }),
+
+  setUserModalOpen: (open) => set({ isUserModalOpen: open }),
+
+  tickNPCMovement: (delta) => {
+    const { npcUsers, buildings, gridSize } = get();
+    if (npcUsers.length === 0) return;
+
+    const now = Date.now();
+    let changed = false;
+    const updated = npcUsers.map(u => {
+      const user = { ...u };
+
+      // Wait phase
+      if (user._waitUntil && now < user._waitUntil) {
+        user.movementState = 'idle';
+        return user;
+      }
+
+      // Pick a new target if we don't have one or reached it
+      const atTarget = user._targetX !== undefined && user._targetZ !== undefined &&
+        Math.abs(user.position.x - user._targetX) < 0.05 &&
+        Math.abs(user.position.z - user._targetZ) < 0.05;
+
+      if (atTarget || user._targetX === undefined || user._targetZ === undefined) {
+        // Wait for 1-4 seconds before moving again
+        if (atTarget && (!user._waitUntil || now >= user._waitUntil)) {
+          user._waitUntil = now + 1000 + Math.random() * 3000;
+          user.movementState = 'idle';
+          // Persist position periodically
+          supabase.from('city_users').update({
+            pos_x: user.position.x,
+            pos_z: user.position.z,
+          }).eq('id', user.id).then();
+          changed = true;
+          return user;
+        }
+
+        // Pick random nearby target
+        const range = 2 + Math.random() * 3;
+        let attempts = 0;
+        let newX: number, newZ: number;
+        do {
+          newX = user.position.x + (Math.random() - 0.5) * range * 2;
+          newZ = user.position.z + (Math.random() - 0.5) * range * 2;
+          // Clamp to grid
+          newX = Math.max(0.5, Math.min(gridSize - 0.5, newX));
+          newZ = Math.max(0.5, Math.min(gridSize - 0.5, newZ));
+          attempts++;
+        } while (attempts < 10 && isPositionBlockedForNPC(newX, newZ, buildings, npcUsers, user.id));
+
+        if (attempts < 10) {
+          user._targetX = newX;
+          user._targetZ = newZ;
+          user._waitUntil = undefined;
+          changed = true;
+        }
+      }
+
+      // Move toward target
+      if (user._targetX !== undefined && user._targetZ !== undefined) {
+        const dx = user._targetX - user.position.x;
+        const dz = user._targetZ - user.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+
+        if (dist > 0.05) {
+          const speed = 0.6; // units per second
+          const step = Math.min(speed * delta, dist);
+          const nx = user.position.x + (dx / dist) * step;
+          const nz = user.position.z + (dz / dist) * step;
+
+          // Check collision at next position
+          if (!isPositionBlockedForNPC(nx, nz, buildings, npcUsers, user.id)) {
+            user.position = { ...user.position, x: nx, z: nz };
+            user.movementState = 'walking';
+            changed = true;
+          } else {
+            // Blocked — pick a new target next tick
+            user._targetX = undefined;
+            user._targetZ = undefined;
+            user.movementState = 'idle';
+            changed = true;
+          }
+        } else {
+          // Arrived
+          user.position = { ...user.position, x: user._targetX, z: user._targetZ };
+          user._targetX = undefined;
+          user._targetZ = undefined;
+          user.movementState = 'idle';
+          changed = true;
+        }
+      }
+
+      return user;
+    });
+
+    if (changed) {
+      set({ npcUsers: updated });
+    }
+  },
 }));
 
 function isValidPosition(pos: { x: number; z: number }, buildings: Building[], isCore: boolean, gridSize: number) {
@@ -458,4 +1082,55 @@ function findValidPosition(buildings: Building[], gridSize: number, isCore: bool
     }
   }
   return null;
+}
+
+/* ─── NPC helpers ─── */
+
+function findNPCSpawnPosition(
+  buildings: Building[],
+  npcUsers: CityUser[],
+  gridSize: number
+): { x: number; z: number } | null {
+  // Try random positions up to 50 times
+  for (let i = 0; i < 50; i++) {
+    const x = 0.5 + Math.random() * (gridSize - 1);
+    const z = 0.5 + Math.random() * (gridSize - 1);
+    if (!isPositionBlockedForNPC(x, z, buildings, npcUsers, '')) {
+      return { x, z };
+    }
+  }
+  // Fallback: grid center
+  return { x: gridSize / 2, z: gridSize / 2 };
+}
+
+function isPositionBlockedForNPC(
+  x: number,
+  z: number,
+  buildings: Building[],
+  npcUsers: CityUser[],
+  selfId: string
+): boolean {
+  // Check building collision (buildings occupy a footprint around their position)
+  for (const b of buildings) {
+    const footprint = b.isCore ? 5 : 2;
+    const half = footprint / 2;
+    if (
+      x >= b.position.x - half && x <= b.position.x + half &&
+      z >= b.position.z - half && z <= b.position.z + half
+    ) {
+      return true;
+    }
+  }
+
+  // Check other NPC collision (minimum distance of 0.4 units)
+  for (const u of npcUsers) {
+    if (u.id === selfId) continue;
+    const dx = x - u.position.x;
+    const dz = z - u.position.z;
+    if (Math.sqrt(dx * dx + dz * dz) < 0.4) {
+      return true;
+    }
+  }
+
+  return false;
 }

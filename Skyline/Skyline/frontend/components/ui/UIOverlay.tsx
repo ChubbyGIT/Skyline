@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useStore, MemoryCategory } from '@/store/useStore';
+import { useStore, MemoryCategory, FriendProfile, FriendRequest as FriendRequestType, CityUser } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
-import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock } from 'lucide-react';
+import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock, HelpCircle, Users, Search, UserPlus, Mail, ExternalLink, Check, XCircle, Palette, UserRound } from 'lucide-react';
 import { CATEGORY_COLORS } from '@/store/useStore';
+import { FriendsPanel } from './FriendsPanel';
 
 export const UIOverlay: React.FC = () => {
     const router = useRouter();
@@ -33,6 +34,32 @@ export const UIOverlay: React.FC = () => {
         setTimelineActive,
         setTimelinePercent,
         getVisibleBuildingIds,
+        // Friends
+        friends,
+        friendRequests,
+        friendsLoading,
+        currentUserProfile,
+        fetchCurrentProfile,
+        fetchFriends,
+        fetchFriendRequests,
+        searchUsers,
+        sendFriendRequest,
+        acceptFriendRequest,
+        declineFriendRequest,
+        removeFriend,
+        sendEmailInvite,
+        viewMode,
+        viewingUserName,
+        // NPC Users
+        npcUsers,
+        selectedNPCId,
+        isUserModalOpen,
+        fetchNPCUsers,
+        addNPCUser,
+        removeNPCUser,
+        updateNPCColor,
+        selectNPC,
+        setUserModalOpen,
     } = useStore() as any;
 
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -46,6 +73,18 @@ export const UIOverlay: React.FC = () => {
     const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
     const [timelinePanelOpen, setTimelinePanelOpen] = useState(false);
     const [exportNotification, setExportNotification] = useState(false);
+    const [isGuideOpen, setIsGuideOpen] = useState(false);
+    const [activeFilter, setActiveFilter] = useState<MemoryCategory | null>(null);
+    // Friends state
+    const [sidebarTab, setSidebarTab] = useState<'city' | 'friends'>('city');
+    const [friendSearchQuery, setFriendSearchQuery] = useState('');
+    const [friendSearchResults, setFriendSearchResults] = useState<FriendProfile[]>([]);
+    const [friendSearching, setFriendSearching] = useState(false);
+    const [selectedFriend, setSelectedFriend] = useState<FriendProfile | null>(null);
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [inviteMessage, setInviteMessage] = useState('');
+    const [inviteSent, setInviteSent] = useState(false);
+    const [pendingRequestIds, setPendingRequestIds] = useState<Set<string>>(new Set());
     const [formData, setFormData] = useState({
         title: '',
         caption: '',
@@ -55,6 +94,14 @@ export const UIOverlay: React.FC = () => {
         date: new Date().toISOString().split('T')[0],
         image: null as File | null
     });
+    // NPC User form state
+    const [npcFormData, setNpcFormData] = useState({
+        name: '',
+        description: '',
+        gender: 'male' as 'male' | 'female',
+    });
+    const [isGenderDropdownOpen, setIsGenderDropdownOpen] = useState(false);
+    const [npcColorPickerValue, setNpcColorPickerValue] = useState('#3498db');
 
     useEffect(() => {
         if (isModalOpen && !draftId) {
@@ -74,7 +121,51 @@ export const UIOverlay: React.FC = () => {
 
     useEffect(() => {
         fetchMemories();
+        fetchCurrentProfile();
+        fetchFriends();
+        fetchFriendRequests();
+        fetchNPCUsers();
     }, []);
+
+    // Debounced friend search
+    useEffect(() => {
+        if (friendSearchQuery.length < 2) {
+            setFriendSearchResults([]);
+            return;
+        }
+        setFriendSearching(true);
+        const timer = setTimeout(async () => {
+            const results = await searchUsers(friendSearchQuery);
+            setFriendSearchResults(results);
+            setFriendSearching(false);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [friendSearchQuery]);
+
+    // Track which users have pending outgoing requests
+    useEffect(() => {
+        const ids = new Set<string>();
+        (friendRequests || []).forEach((r: FriendRequestType) => {
+            if (r.fromUserId === currentUserProfile?.id) ids.add(r.toUserId);
+        });
+        setPendingRequestIds(ids);
+    }, [friendRequests, currentUserProfile]);
+
+    const handleSendFriendRequest = async (userId: string) => {
+        await sendFriendRequest(userId);
+        setPendingRequestIds(prev => new Set(prev).add(userId));
+    };
+
+    const handleSendInvite = async () => {
+        if (!inviteEmail) return;
+        await sendEmailInvite(inviteEmail, inviteMessage);
+        setInviteSent(true);
+        setInviteEmail('');
+        setInviteMessage('');
+        setTimeout(() => setInviteSent(false), 3000);
+    };
+
+    const isFriend = (userId: string) => (friends || []).some((f: FriendProfile) => f.id === userId);
 
     const handleLogout = async () => {
         const { error } = await supabase.auth.signOut();
@@ -118,6 +209,19 @@ export const UIOverlay: React.FC = () => {
             image: null
         });
         setIsDropdownOpen(false);
+    };
+
+    const handleNPCSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await addNPCUser(npcFormData);
+        setUserModalOpen(false);
+        setNpcFormData({ name: '', description: '', gender: 'male' });
+    };
+
+    const handleCancelNPCModal = () => {
+        setUserModalOpen(false);
+        setNpcFormData({ name: '', description: '', gender: 'male' });
+        setIsGenderDropdownOpen(false);
     };
 
     /* ── 2D Map Export ── */
@@ -446,9 +550,83 @@ export const UIOverlay: React.FC = () => {
                         <div style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', height: '100%' }}>
                             
                             {/* Header */}
-                            <div style={{ fontSize: '22px', fontWeight: 600, color: '#d1fae5', marginBottom: '20px', letterSpacing: '-0.3px' }}>
-                                Skyline
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                                <div style={{ fontSize: '22px', fontWeight: 600, color: '#d1fae5', letterSpacing: '-0.3px' }}>
+                                    Skyline
+                                </div>
+                                <button
+                                    onClick={() => setIsGuideOpen(true)}
+                                    title="User Guide"
+                                    style={{
+                                        width: '32px',
+                                        height: '32px',
+                                        borderRadius: '10px',
+                                        background: 'rgba(255,255,255,0.06)',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        color: '#6ee7b7',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.25s ease',
+                                        flexShrink: 0,
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = 'rgba(16,185,129,0.15)';
+                                        e.currentTarget.style.borderColor = 'rgba(52,211,153,0.4)';
+                                        e.currentTarget.style.color = '#34d399';
+                                        e.currentTarget.style.boxShadow = '0 0 12px rgba(52,211,153,0.25)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+                                        e.currentTarget.style.color = '#6ee7b7';
+                                        e.currentTarget.style.boxShadow = 'none';
+                                    }}
+                                >
+                                    <HelpCircle size={16} />
+                                </button>
                             </div>
+
+                            {/* ── Tab Bar: City | Friends ── */}
+                            <div style={{
+                                display: 'flex', gap: '4px', marginBottom: '16px',
+                                background: 'rgba(255,255,255,0.04)', borderRadius: '12px',
+                                padding: '3px', border: '1px solid rgba(255,255,255,0.06)',
+                            }}>
+                                {[
+                                    { key: 'city' as const, label: 'City', icon: <Home size={13} /> },
+                                    { key: 'friends' as const, label: 'Friends', icon: <Users size={13} /> },
+                                ].map(tab => {
+                                    const active = sidebarTab === tab.key;
+                                    const reqCount = tab.key === 'friends' ? (friendRequests || []).filter((r: any) => r.toUserId === currentUserProfile?.id && r.status === 'pending').length : 0;
+                                    return (
+                                        <button key={tab.key} onClick={() => setSidebarTab(tab.key)} style={{
+                                            flex: 1, padding: '8px 0', borderRadius: '10px', fontFamily: 'inherit',
+                                            fontSize: '11px', fontWeight: 600, letterSpacing: '0.5px', cursor: 'pointer',
+                                            border: 'none', transition: 'all 0.2s',
+                                            background: active ? 'rgba(52,211,153,0.15)' : 'transparent',
+                                            color: active ? '#34d399' : '#6ee7b780',
+                                            boxShadow: active ? '0 0 12px rgba(52,211,153,0.15)' : 'none',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                            position: 'relative',
+                                        }}>
+                                            {tab.icon} {tab.label}
+                                            {reqCount > 0 && (
+                                                <span style={{
+                                                    position: 'absolute', top: 2, right: 8, width: 16, height: 16,
+                                                    borderRadius: '50%', background: '#ef4444', color: 'white',
+                                                    fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center',
+                                                    justifyContent: 'center', boxShadow: '0 0 8px rgba(239,68,68,0.5)',
+                                                }}>{reqCount}</span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* ── City Tab Content ── */}
+                            {sidebarTab === 'city' && (<>
 
                             {/* Stats Card */}
                             <div style={{
@@ -505,6 +683,40 @@ export const UIOverlay: React.FC = () => {
                                 <Plus size={16} /> New Memory
                             </button>
 
+                            {/* Add User Button */}
+                            <button
+                                onClick={() => setUserModalOpen(true)}
+                                style={{
+                                    ...glassCard,
+                                    width: '100%',
+                                    padding: '14px',
+                                    borderRadius: '999px',
+                                    background: 'rgba(168,85,247,0.12)',
+                                    border: '1px solid rgba(168,85,247,0.35)',
+                                    color: '#c4b5fd',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    marginBottom: '20px',
+                                    fontSize: '13px',
+                                    letterSpacing: '0.5px',
+                                    transition: 'all 0.2s ease',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(168,85,247,0.22)';
+                                    e.currentTarget.style.boxShadow = '0 0 20px rgba(168,85,247,0.35)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(168,85,247,0.12)';
+                                    e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.4)';
+                                }}
+                            >
+                                <UserRound size={16} /> Create User
+                            </button>
+
                             {/* Section Title */}
                             <div style={{ fontSize: '11px', color: '#6ee7b7', marginBottom: '10px', letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 600 }}>
                                 Memory Records
@@ -538,9 +750,101 @@ export const UIOverlay: React.FC = () => {
                                 </svg>
                             </div>
 
+                            {/* Category Filters */}
+                            <div style={{ marginBottom: '12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    {[
+                                        { key: MemoryCategory.HEALTH, label: 'Health', color: '#FF69B4' },
+                                        { key: MemoryCategory.RELATIONSHIPS, label: 'Relation', color: '#90EE90' },
+                                        { key: MemoryCategory.CAREER, label: 'Career', color: '#4A90E2' },
+                                        { key: MemoryCategory.PERSONAL, label: 'Personal', color: '#FF6B6B' },
+                                        { key: MemoryCategory.OTHER, label: 'Other', color: '#FFD700' },
+                                    ].map((f) => {
+                                        const isActive = activeFilter === f.key;
+                                        return (
+                                            <button
+                                                key={f.key}
+                                                onClick={() => setActiveFilter(f.key)}
+                                                style={{
+                                                    padding: '4px 10px',
+                                                    borderRadius: '20px',
+                                                    fontSize: '10px',
+                                                    fontWeight: 600,
+                                                    fontFamily: 'inherit',
+                                                    letterSpacing: '0.3px',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s ease',
+                                                    border: isActive
+                                                        ? `1px solid ${f.color}80`
+                                                        : '1px solid rgba(255,255,255,0.08)',
+                                                    background: isActive
+                                                        ? `${f.color}20`
+                                                        : 'rgba(255,255,255,0.04)',
+                                                    color: isActive ? f.color : '#6ee7b780',
+                                                    boxShadow: isActive
+                                                        ? `0 0 8px ${f.color}25`
+                                                        : 'none',
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    if (!isActive) {
+                                                        e.currentTarget.style.background = `${f.color}12`;
+                                                        e.currentTarget.style.color = `${f.color}cc`;
+                                                        e.currentTarget.style.borderColor = `${f.color}30`;
+                                                    }
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    if (!isActive) {
+                                                        e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                                                        e.currentTarget.style.color = '#6ee7b780';
+                                                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+                                                    }
+                                                }}
+                                            >
+                                                {f.label}
+                                            </button>
+                                        );
+                                    })}
+                                    {activeFilter && (
+                                        <button
+                                            onClick={() => setActiveFilter(null)}
+                                            style={{
+                                                padding: '4px 8px',
+                                                borderRadius: '20px',
+                                                fontSize: '10px',
+                                                fontWeight: 600,
+                                                fontFamily: 'inherit',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s ease',
+                                                border: '1px solid rgba(239,68,68,0.25)',
+                                                background: 'rgba(239,68,68,0.08)',
+                                                color: '#f87171',
+                                                letterSpacing: '0.3px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '3px',
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.background = 'rgba(239,68,68,0.15)';
+                                                e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.background = 'rgba(239,68,68,0.08)';
+                                                e.currentTarget.style.borderColor = 'rgba(239,68,68,0.25)';
+                                            }}
+                                        >
+                                            <X size={10} /> Clear
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
                             {/* Memory List */}
                             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '4px' }} className="scrollbar-hide">
-                                {memories.filter((m: any) => m.title?.toLowerCase().includes(searchQuery.toLowerCase())).map((memory: any) => {
+                                {memories.filter((m: any) => {
+                                    const matchesSearch = m.title?.toLowerCase().includes(searchQuery.toLowerCase());
+                                    const matchesFilter = !activeFilter || m.category === activeFilter;
+                                    return matchesSearch && matchesFilter;
+                                }).map((memory: any) => {
                                     const isSelected = selectedBuildingId === memory.id;
                                     const building = buildings.find((b: any) => b.memoryId === memory.id);
                                     const accentColor = building?.color || '#34d399';
@@ -603,9 +907,18 @@ export const UIOverlay: React.FC = () => {
                                 )}
                             </div>
 
+                            </>)}
+
+                            {/* ── Friends Tab Content ── */}
+                            {sidebarTab === 'friends' && (
+                                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                                    <FriendsPanel />
+                                </div>
+                            )}
+
                             {/* Footer */}
                             <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end' }}>
-                                <span style={{ fontSize: '9px', color: '#6ee7b760', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1.5px' }}>Skyline Engine V1.2</span>
+                                <span style={{ fontSize: '9px', color: '#6ee7b760', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1.5px' }}>Skyline Engine V1.3</span>
                             </div>
                         </div>
                     )}
@@ -949,18 +1262,22 @@ export const UIOverlay: React.FC = () => {
                 <div 
                     className="fixed inset-0 z-50 flex items-center justify-center pointer-events-auto overflow-y-auto"
                     style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}
+                    onClick={handleCancelModal}
                 >
                     <div 
+                        onClick={(e) => e.stopPropagation()}
                         style={{
-                            ...sidebarStyles,
-                            position: 'relative',
+                            fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+                            background: 'rgba(6, 40, 30, 0.9)',
+                            backdropFilter: 'blur(20px)',
+                            WebkitBackdropFilter: 'blur(20px)',
+                            border: '1px solid rgba(52,211,153,0.2)',
+                            boxShadow: '0 25px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)',
+                            borderRadius: '20px',
+                            position: 'relative' as const,
                             width: '35vw',
                             minWidth: '380px',
                             padding: '22px 26px',
-                            borderRadius: '20px',
-                            background: 'rgba(6, 40, 30, 0.9)',
-                            border: '1px solid rgba(52,211,153,0.2)',
-                            boxShadow: '0 25px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)',
                         }}
                     >
                         {/* Corner glow */}
@@ -969,9 +1286,10 @@ export const UIOverlay: React.FC = () => {
 
                         {/* Close */}
                         <button 
-                            onClick={handleCancelModal} 
+                            onClick={(e) => { e.stopPropagation(); handleCancelModal(); }} 
                             style={{
                                 position: 'absolute', top: '20px', right: '20px',
+                                zIndex: 10,
                                 width: '32px', height: '32px', borderRadius: '50%',
                                 border: '1px solid rgba(255,255,255,0.15)',
                                 background: 'transparent', color: '#6ee7b7',
@@ -1213,6 +1531,356 @@ export const UIOverlay: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {/* ─── NPC USER CREATION MODAL ─── */}
+            {isUserModalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center pointer-events-auto overflow-y-auto"
+                    style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}
+                    onClick={handleCancelNPCModal}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+                            background: 'rgba(6, 40, 30, 0.9)',
+                            backdropFilter: 'blur(20px)',
+                            WebkitBackdropFilter: 'blur(20px)',
+                            border: '1px solid rgba(168,85,247,0.3)',
+                            boxShadow: '0 25px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)',
+                            borderRadius: '20px',
+                            position: 'relative' as const,
+                            width: '30vw',
+                            minWidth: '360px',
+                            padding: '22px 26px',
+                        }}
+                    >
+                        {/* Corner glow */}
+                        <div style={{ position: 'absolute', width: '180px', height: '180px', background: '#a855f7', filter: 'blur(100px)', top: '-40px', left: '-40px', opacity: 0.2, pointerEvents: 'none' }} />
+                        <div style={{ position: 'absolute', width: '150px', height: '150px', background: '#9b59b6', filter: 'blur(100px)', bottom: '-30px', right: '-30px', opacity: 0.12, pointerEvents: 'none' }} />
+
+                        {/* Close */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); handleCancelNPCModal(); }}
+                            style={{
+                                position: 'absolute', top: '20px', right: '20px',
+                                zIndex: 10,
+                                width: '32px', height: '32px', borderRadius: '50%',
+                                border: '1px solid rgba(255,255,255,0.15)',
+                                background: 'transparent', color: '#c4b5fd',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                cursor: 'pointer', transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#e9d5ff'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#c4b5fd'; }}
+                        >
+                            <X size={16} />
+                        </button>
+
+                        {/* Header */}
+                        <div style={{ marginBottom: '18px', paddingBottom: '14px', borderBottom: '1px solid rgba(255,255,255,0.08)', position: 'relative', zIndex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                                <div style={{
+                                    width: '32px', height: '32px', borderRadius: '10px',
+                                    background: 'linear-gradient(135deg, rgba(168,85,247,0.3), rgba(139,92,246,0.15))',
+                                    border: '1px solid rgba(168,85,247,0.3)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                    <UserRound size={16} color="#a855f7" />
+                                </div>
+                                <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#e9d5ff', letterSpacing: '-0.3px', margin: 0, lineHeight: 1.2 }}>Create User</h2>
+                            </div>
+                            <p style={{ fontSize: '11px', color: '#a78bfa80', fontWeight: 400, marginTop: '6px' }}>Add a new person NPC to your city</p>
+                        </div>
+
+                        <form onSubmit={handleNPCSubmit} style={{ position: 'relative', zIndex: 1 }}>
+                            {/* Name */}
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={{ display: 'block', fontSize: '10px', fontWeight: 600, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '6px' }}>Name</label>
+                                <input
+                                    style={{
+                                        width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                        background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                                        color: '#e9d5ff', outline: 'none', fontSize: '13px', fontWeight: 500,
+                                        fontFamily: 'inherit', transition: 'all 0.2s', boxSizing: 'border-box',
+                                    }}
+                                    onFocus={(e) => { e.target.style.borderColor = 'rgba(168,85,247,0.5)'; e.target.style.boxShadow = '0 0 10px rgba(168,85,247,0.15)'; }}
+                                    onBlur={(e) => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none'; }}
+                                    required
+                                    placeholder="Enter user name..."
+                                    value={npcFormData.name}
+                                    onChange={e => setNpcFormData({ ...npcFormData, name: e.target.value })}
+                                />
+                            </div>
+
+                            {/* Description */}
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={{ display: 'block', fontSize: '10px', fontWeight: 600, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '6px' }}>Description</label>
+                                <input
+                                    style={{
+                                        width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                        background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                                        color: '#e9d5ff', outline: 'none', fontSize: '13px', fontWeight: 400,
+                                        fontFamily: 'inherit', transition: 'all 0.2s', boxSizing: 'border-box',
+                                    }}
+                                    onFocus={(e) => { e.target.style.borderColor = 'rgba(168,85,247,0.5)'; e.target.style.boxShadow = '0 0 10px rgba(168,85,247,0.15)'; }}
+                                    onBlur={(e) => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none'; }}
+                                    placeholder="One-line description..."
+                                    value={npcFormData.description}
+                                    onChange={e => setNpcFormData({ ...npcFormData, description: e.target.value })}
+                                />
+                            </div>
+
+                            {/* Gender dropdown */}
+                            <div style={{ marginBottom: '22px' }}>
+                                <label style={{ display: 'block', fontSize: '10px', fontWeight: 600, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '6px' }}>Gender</label>
+                                <div style={{ position: 'relative' }}>
+                                    <div
+                                        onClick={() => setIsGenderDropdownOpen(!isGenderDropdownOpen)}
+                                        style={{
+                                            width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                            background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                                            color: '#e9d5ff', fontSize: '13px', cursor: 'pointer',
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            transition: 'all 0.2s', boxSizing: 'border-box',
+                                        }}
+                                    >
+                                        <span>{npcFormData.gender === 'male' ? '♂ Male' : '♀ Female'}</span>
+                                        <svg width="12" height="7" viewBox="0 0 14 8" fill="none" style={{ transform: isGenderDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                                            <path d="M1 1L7 7L13 1" stroke="#c4b5fd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </svg>
+                                    </div>
+                                    {isGenderDropdownOpen && (
+                                        <div style={{
+                                            position: 'absolute', top: '100%', left: 0, marginTop: '6px',
+                                            width: '100%', borderRadius: '10px', overflow: 'hidden', zIndex: 50,
+                                            background: 'rgba(6, 40, 30, 0.95)', border: '1px solid rgba(255,255,255,0.1)',
+                                            boxShadow: '0 15px 40px rgba(0,0,0,0.5)',
+                                        }}>
+                                            {(['male', 'female'] as const).map(g => (
+                                                <div
+                                                    key={g}
+                                                    onClick={() => { setNpcFormData({ ...npcFormData, gender: g }); setIsGenderDropdownOpen(false); }}
+                                                    style={{
+                                                        padding: '10px 14px', color: '#e9d5ff', fontSize: '13px',
+                                                        cursor: 'pointer', transition: 'all 0.15s', fontWeight: 500,
+                                                    }}
+                                                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(168,85,247,0.15)'; e.currentTarget.style.color = '#c4b5fd'; }}
+                                                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#e9d5ff'; }}
+                                                >
+                                                    {g === 'male' ? '♂ Male' : '♀ Female'}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Submit */}
+                            <button
+                                type="submit"
+                                style={{
+                                    width: '100%', padding: '14px', borderRadius: '999px',
+                                    background: 'linear-gradient(135deg, #a855f7, #7c3aed)',
+                                    color: 'white', fontWeight: 700, fontSize: '13px',
+                                    textTransform: 'uppercase', letterSpacing: '1.5px',
+                                    border: 'none', cursor: 'pointer',
+                                    boxShadow: '0 8px 25px rgba(168,85,247,0.4)',
+                                    transition: 'all 0.2s',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 12px 35px rgba(168,85,247,0.6)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 8px 25px rgba(168,85,247,0.4)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                            >
+                                Spawn User
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── NPC USER DETAILS PANEL ─── */}
+            {selectedNPCId && (() => {
+                const selNPC = npcUsers.find((u: CityUser) => u.id === selectedNPCId);
+                if (!selNPC) return null;
+                const accentColor = selNPC.color || '#a855f7';
+
+                return (
+                    <div
+                        className="fixed pointer-events-auto"
+                        style={{
+                            top: '24px',
+                            right: '24px',
+                            width: '340px',
+                            maxHeight: 'calc(100vh - 48px)',
+                            overflowY: 'auto',
+                            zIndex: 55,
+                            background: 'rgba(6, 40, 30, 0.92)',
+                            backdropFilter: 'blur(20px)',
+                            border: `1px solid ${accentColor}40`,
+                            borderRadius: '20px',
+                            padding: '24px',
+                            boxShadow: `0 20px 60px rgba(0,0,0,0.7), 0 0 25px ${accentColor}18`,
+                            fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+                            color: 'white',
+                        }}
+                    >
+                        {/* Close X */}
+                        <button
+                            onClick={() => selectNPC(null)}
+                            style={{
+                                position: 'absolute', top: '16px', right: '16px',
+                                width: '28px', height: '28px', borderRadius: '50%',
+                                border: `1px solid ${accentColor}40`,
+                                background: 'transparent', color: accentColor,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                cursor: 'pointer', fontSize: '14px', transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                        >✕</button>
+
+                        {/* User badge */}
+                        <div style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '6px',
+                            padding: '4px 12px', borderRadius: '20px',
+                            background: `${accentColor}18`, border: `1px solid ${accentColor}35`,
+                            fontSize: '10px', fontWeight: 600, color: accentColor,
+                            textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '14px',
+                        }}>
+                            <UserRound size={11} /> Person NPC
+                        </div>
+
+                        {/* Avatar circle */}
+                        <div style={{
+                            width: '48px', height: '48px', borderRadius: '50%',
+                            background: `linear-gradient(135deg, ${accentColor}, ${accentColor}88)`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            marginBottom: '12px', boxShadow: `0 0 20px ${accentColor}30`,
+                            fontSize: '22px', fontWeight: 700, color: 'white',
+                        }}>
+                            {selNPC.name.charAt(0).toUpperCase()}
+                        </div>
+
+                        {/* Name */}
+                        <div style={{
+                            fontSize: '20px', fontWeight: 700, color: '#d1fae5',
+                            marginBottom: '4px', paddingRight: '30px', lineHeight: 1.2,
+                        }}>{selNPC.name}</div>
+
+                        {/* Description */}
+                        {selNPC.description && (
+                            <p style={{
+                                fontSize: '13px', color: '#e2e8f0', fontStyle: 'italic',
+                                opacity: 0.7, lineHeight: 1.5, margin: '4px 0 12px 0',
+                            }}>"{selNPC.description}"</p>
+                        )}
+
+                        {/* Divider */}
+                        <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '12px 0 14px 0' }} />
+
+                        {/* Fields */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {/* Gender */}
+                            <div>
+                                <div style={{ fontSize: '10px', fontWeight: 600, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '1.2px', marginBottom: '5px' }}>Gender</div>
+                                <div style={{
+                                    padding: '8px 12px', borderRadius: '10px',
+                                    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                                    fontSize: '13px', color: '#d1fae5',
+                                }}>{selNPC.gender === 'male' ? '♂ Male' : '♀ Female'}</div>
+                            </div>
+
+                            {/* Position */}
+                            <div>
+                                <div style={{ fontSize: '10px', fontWeight: 600, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '1.2px', marginBottom: '5px' }}>Position</div>
+                                <div style={{
+                                    padding: '8px 12px', borderRadius: '10px',
+                                    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                                    fontSize: '12px', color: '#94a3b8', fontFamily: 'monospace',
+                                }}>X: {selNPC.position.x.toFixed(1)} &nbsp;·&nbsp; Z: {selNPC.position.z.toFixed(1)}</div>
+                            </div>
+
+                            {/* Status */}
+                            <div>
+                                <div style={{ fontSize: '10px', fontWeight: 600, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '1.2px', marginBottom: '5px' }}>Status</div>
+                                <div style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                    padding: '6px 12px', borderRadius: '20px',
+                                    background: selNPC.movementState === 'walking' ? 'rgba(52,211,153,0.12)' : 'rgba(255,255,255,0.06)',
+                                    border: `1px solid ${selNPC.movementState === 'walking' ? 'rgba(52,211,153,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                                    fontSize: '11px', fontWeight: 600,
+                                    color: selNPC.movementState === 'walking' ? '#34d399' : '#94a3b8',
+                                }}>
+                                    <div style={{
+                                        width: '6px', height: '6px', borderRadius: '50%',
+                                        background: selNPC.movementState === 'walking' ? '#34d399' : '#94a3b8',
+                                        boxShadow: selNPC.movementState === 'walking' ? '0 0 6px #34d399' : 'none',
+                                    }} />
+                                    {selNPC.movementState === 'walking' ? 'Walking' : 'Idle'}
+                                </div>
+                            </div>
+
+                            {/* T-Shirt Color */}
+                            <div>
+                                <div style={{ fontSize: '10px', fontWeight: 600, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '1.2px', marginBottom: '8px' }}>T-Shirt Color</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <input
+                                        type="color"
+                                        value={selNPC.color}
+                                        onChange={(e) => updateNPCColor(selNPC.id, e.target.value)}
+                                        style={{
+                                            width: '40px', height: '40px', borderRadius: '10px',
+                                            border: '2px solid rgba(255,255,255,0.15)',
+                                            background: 'transparent', cursor: 'pointer',
+                                            padding: 0,
+                                        }}
+                                    />
+                                    <div style={{
+                                        padding: '8px 14px', borderRadius: '10px',
+                                        background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                                        fontSize: '12px', color: selNPC.color, fontFamily: 'monospace', fontWeight: 600,
+                                    }}>{selNPC.color}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Divider */}
+                        <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '16px 0 14px 0' }} />
+
+                        {/* Action buttons */}
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                                onClick={() => selectNPC(null)}
+                                style={{
+                                    flex: 1, padding: '10px 0', borderRadius: '12px',
+                                    background: 'rgba(255,255,255,0.06)',
+                                    border: `1px solid ${accentColor}60`,
+                                    color: accentColor, fontWeight: 600, fontSize: '12px',
+                                    cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 15px ${accentColor}40`; e.currentTarget.style.background = `${accentColor}15`; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                            >Close</button>
+                            <button
+                                onClick={() => {
+                                    removeNPCUser(selNPC.id);
+                                    selectNPC(null);
+                                }}
+                                style={{
+                                    flex: 1, padding: '10px 0', borderRadius: '12px',
+                                    background: 'rgba(239,68,68,0.08)',
+                                    border: '1px solid rgba(239,68,68,0.4)',
+                                    color: '#ef4444', fontWeight: 600, fontSize: '12px',
+                                    cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 0 15px rgba(239,68,68,0.3)'; e.currentTarget.style.background = 'rgba(239,68,68,0.15)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+                            >Delete User</button>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* ─── CUSTOM CONFIRMATION MODAL ─── */}
             {confirmAction && (
                 <div
@@ -1517,6 +2185,331 @@ export const UIOverlay: React.FC = () => {
                     @keyframes fadeInUp {
                         from { opacity: 0; transform: translateX(-50%) translateY(10px); }
                         to { opacity: 1; transform: translateX(-50%) translateY(0); }
+                    }
+                `}</style>
+            )}
+
+            {/* ─── USER GUIDE MODAL ─── */}
+            {isGuideOpen && (
+                <div
+                    className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-auto"
+                    style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', animation: 'guideBackdropIn 0.25s ease-out' }}
+                    onClick={() => setIsGuideOpen(false)}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            width: '680px',
+                            maxWidth: '90vw',
+                            maxHeight: '82vh',
+                            overflowY: 'auto',
+                            borderRadius: '24px',
+                            background: 'rgba(6, 40, 30, 0.95)',
+                            backdropFilter: 'blur(24px)',
+                            border: '1px solid rgba(52,211,153,0.2)',
+                            boxShadow: '0 30px 80px rgba(0,0,0,0.7), 0 0 40px rgba(16,185,129,0.08)',
+                            fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+                            color: '#d1fae5',
+                            position: 'relative',
+                            animation: 'guidePanelIn 0.3s cubic-bezier(0.16,1,0.3,1)',
+                        }}
+                        className="scrollbar-hide"
+                    >
+                        {/* Decorative corner glow */}
+                        <div style={{ position: 'absolute', width: '200px', height: '200px', background: '#10b981', filter: 'blur(120px)', top: '-60px', left: '-60px', opacity: 0.2, pointerEvents: 'none' }} />
+                        <div style={{ position: 'absolute', width: '150px', height: '150px', background: '#34d399', filter: 'blur(100px)', bottom: '-40px', right: '-40px', opacity: 0.12, pointerEvents: 'none' }} />
+
+                        {/* Sticky header */}
+                        <div style={{
+                            position: 'sticky', top: 0, zIndex: 10,
+                            background: 'rgba(6, 40, 30, 0.98)',
+                            borderBottom: '1px solid rgba(255,255,255,0.06)',
+                            padding: '24px 32px 18px 32px',
+                            borderRadius: '24px 24px 0 0',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{
+                                    width: '36px', height: '36px', borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, rgba(52,211,153,0.2), rgba(16,185,129,0.1))',
+                                    border: '1px solid rgba(52,211,153,0.3)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                    <HelpCircle size={18} color="#34d399" />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#d1fae5', letterSpacing: '-0.3px' }}>User Guide</div>
+                                    <div style={{ fontSize: '10px', color: '#6ee7b780', fontWeight: 500, letterSpacing: '1px', textTransform: 'uppercase' }}>Skyline Manual</div>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setIsGuideOpen(false)}
+                                style={{
+                                    width: '32px', height: '32px', borderRadius: '50%',
+                                    border: '1px solid rgba(255,255,255,0.12)',
+                                    background: 'transparent', color: '#6ee7b7',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer', transition: 'all 0.2s',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#d1fae5'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6ee7b7'; }}
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div style={{ padding: '8px 32px 32px 32px', position: 'relative', zIndex: 1 }}>
+
+                            {/* Section 1: Overview */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>🏙️</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Overview</h3>
+                                </div>
+                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: 0 }}>
+                                    Skyline is a memory-tracking and 3D journaling application where your life experiences are visualized as a growing city. Each journal entry appears as a <strong style={{ color: '#6ee7b7' }}>skyscraper</strong>, while your most meaningful memories become <strong style={{ color: '#fcd34d' }}>castles</strong>. Over time, your city evolves into a visual map of your personal journey.
+                                </p>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 2: Creating Entries */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>✏️</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Creating Entries</h3>
+                                </div>
+                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: '0 0 12px 0' }}>
+                                    Each memory you add becomes a structure in your city. For every entry, you can:
+                                </p>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '14px' }}>
+                                    {['Add a Title', 'Write Details / Caption', 'Attach an Image', 'Assign a Category'].map((item) => (
+                                        <div key={item} style={{
+                                            padding: '8px 12px', borderRadius: '10px',
+                                            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)',
+                                            fontSize: '12px', color: '#a7f3d0', fontWeight: 500,
+                                            display: 'flex', alignItems: 'center', gap: '6px',
+                                        }}>
+                                            <span style={{ color: '#34d399', fontSize: '10px' }}>●</span> {item}
+                                        </div>
+                                    ))}
+                                </div>
+                                <div style={{ fontSize: '11px', fontWeight: 600, color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '1.2px', marginBottom: '8px' }}>Entry Categories</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {[
+                                        { name: 'Health', color: '#FF69B4' },
+                                        { name: 'Relationship', color: '#90EE90' },
+                                        { name: 'Career', color: '#4A90E2' },
+                                        { name: 'Personal', color: '#FF6B6B' },
+                                        { name: 'Other', color: '#FFD700' },
+                                    ].map((cat) => (
+                                        <div key={cat.name} style={{
+                                            padding: '5px 12px', borderRadius: '20px',
+                                            background: `${cat.color}18`, border: `1px solid ${cat.color}40`,
+                                            fontSize: '11px', fontWeight: 600, color: cat.color,
+                                        }}>
+                                            {cat.name}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 3: Memory Visualization */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>🏢</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Memory Visualization</h3>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                    <div style={{
+                                        padding: '16px', borderRadius: '14px',
+                                        background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.15)',
+                                    }}>
+                                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#6ee7b7', marginBottom: '8px' }}>🏢 Skyscrapers</div>
+                                        <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px', color: '#d1fae5aa', lineHeight: 1.8 }}>
+                                            <li>Standard journal entries</li>
+                                            <li>1×1 tile footprint</li>
+                                            <li>1 unit spacing required</li>
+                                        </ul>
+                                    </div>
+                                    <div style={{
+                                        padding: '16px', borderRadius: '14px',
+                                        background: 'rgba(252,211,77,0.06)', border: '1px solid rgba(252,211,77,0.15)',
+                                    }}>
+                                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#fcd34d', marginBottom: '8px' }}>🏰 Castles</div>
+                                        <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px', color: '#d1fae5aa', lineHeight: 1.8 }}>
+                                            <li>Core memories only</li>
+                                            <li>5×5 tile footprint</li>
+                                            <li>2 units spacing required</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 4: Impact & Fondness */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>📊</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Impact &amp; Fondness</h3>
+                                </div>
+                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: '0 0 12px 0' }}>
+                                    Each entry is shaped by two parameters that determine building height:
+                                </p>
+                                <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+                                    <div style={{ flex: 1, padding: '12px 14px', borderRadius: '12px', background: 'rgba(103,232,249,0.08)', border: '1px solid rgba(103,232,249,0.2)' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#67e8f9', marginBottom: '4px' }}>Impact</div>
+                                        <div style={{ fontSize: '11px', color: '#d1fae5aa' }}>How significant the memory is</div>
+                                    </div>
+                                    <div style={{ flex: 1, padding: '12px 14px', borderRadius: '12px', background: 'rgba(253,164,175,0.08)', border: '1px solid rgba(253,164,175,0.2)' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#fda4af', marginBottom: '4px' }}>Fondness</div>
+                                        <div style={{ fontSize: '11px', color: '#d1fae5aa' }}>How emotionally meaningful it is</div>
+                                    </div>
+                                </div>
+                                <div style={{
+                                    padding: '10px 14px', borderRadius: '10px',
+                                    background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.15)',
+                                    fontSize: '12px', color: '#a7f3d0', fontWeight: 500, textAlign: 'center',
+                                }}>
+                                    ↑ Higher values = Taller buildings &nbsp;·&nbsp; ↓ Lower values = Shorter buildings
+                                </div>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 5: City Layout */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>🗺️</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>City Layout</h3>
+                                </div>
+                                <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: '#d1fae5cc', lineHeight: 2 }}>
+                                    <li>Buildings are placed <strong style={{ color: '#6ee7b7' }}>automatically</strong> in available space</li>
+                                    <li>The system ensures proper spacing between structures</li>
+                                    <li>Your city grows organically as you add more entries</li>
+                                </ul>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 6: Navigation */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>🖱️</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Navigation Controls</h3>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    {[
+                                        { action: 'Left Click + Drag', desc: 'Move across the city' },
+                                        { action: 'Right Click + Drag', desc: 'Change camera orientation' },
+                                        { action: 'Scroll Wheel', desc: 'Zoom in / out' },
+                                        { action: 'W A S D Keys', desc: 'Keyboard pan' },
+                                    ].map((ctrl) => (
+                                        <div key={ctrl.action} style={{
+                                            display: 'flex', alignItems: 'center', gap: '12px',
+                                            padding: '8px 12px', borderRadius: '10px',
+                                            background: 'rgba(255,255,255,0.03)',
+                                        }}>
+                                            <span style={{
+                                                fontSize: '11px', fontWeight: 700, color: '#34d399',
+                                                padding: '3px 8px', borderRadius: '6px',
+                                                background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.2)',
+                                                whiteSpace: 'nowrap', fontFamily: 'monospace',
+                                            }}>{ctrl.action}</span>
+                                            <span style={{ fontSize: '12px', color: '#d1fae5aa' }}>{ctrl.desc}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 7: Managing Entries */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>🔧</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Managing Entries</h3>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ padding: '12px 14px', borderRadius: '12px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.12)' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#fca5a5', marginBottom: '4px' }}>🗑️ Delete an Entry</div>
+                                        <div style={{ fontSize: '12px', color: '#d1fae5aa' }}>Click a building → select <strong style={{ color: '#ef4444' }}>Demolish</strong> to permanently remove it</div>
+                                    </div>
+                                    <div style={{ padding: '12px 14px', borderRadius: '12px', background: 'rgba(168,85,247,0.06)', border: '1px solid rgba(168,85,247,0.12)' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#c4b5fd', marginBottom: '4px' }}>📜 View Timeline</div>
+                                        <div style={{ fontSize: '12px', color: '#d1fae5aa' }}>Toggle <strong style={{ color: '#a855f7' }}>View Timeline</strong> to see memories in chronological order</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 8: Exporting */}
+                            <div style={{ marginBottom: '28px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                                    <span style={{ fontSize: '16px' }}>📥</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Exporting Your City</h3>
+                                </div>
+                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: 0 }}>
+                                    Click <strong style={{ color: '#6ee7b7' }}>Export 2D Map</strong> in the bottom bar to generate an image of your city layout — perfect for sharing or archiving your memory map.
+                                </p>
+                            </div>
+
+                            <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 0 28px 0' }} />
+
+                            {/* Section 9: Tips */}
+                            <div style={{ marginBottom: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                                    <span style={{ fontSize: '16px' }}>💡</span>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Tips for Best Use</h3>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    {[
+                                        'Use Impact + Fondness wisely to highlight important memories',
+                                        'Reserve Castles for truly defining moments',
+                                        'Categorize entries properly for better filtering',
+                                        'Regularly export your city to track growth over time',
+                                    ].map((tip, i) => (
+                                        <div key={i} style={{
+                                            padding: '8px 12px', borderRadius: '10px',
+                                            background: 'rgba(255,255,255,0.03)',
+                                            fontSize: '12px', color: '#d1fae5aa', lineHeight: 1.5,
+                                            display: 'flex', alignItems: 'flex-start', gap: '8px',
+                                        }}>
+                                            <span style={{ color: '#fcd34d', fontSize: '10px', marginTop: '3px', flexShrink: 0 }}>★</span>
+                                            {tip}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Footer tagline */}
+                            <div style={{
+                                marginTop: '24px', paddingTop: '16px',
+                                borderTop: '1px solid rgba(255,255,255,0.06)',
+                                textAlign: 'center',
+                            }}>
+                                <p style={{ fontSize: '12px', color: '#6ee7b780', fontStyle: 'italic', lineHeight: 1.6, margin: 0 }}>
+                                    Your memories don't just sit in a list — they rise, expand,<br/>and shape a city that's uniquely yours.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {isGuideOpen && (
+                <style>{`
+                    @keyframes guideBackdropIn {
+                        from { opacity: 0; }
+                        to { opacity: 1; }
+                    }
+                    @keyframes guidePanelIn {
+                        from { opacity: 0; transform: scale(0.95) translateY(12px); }
+                        to { opacity: 1; transform: scale(1) translateY(0); }
                     }
                 `}</style>
             )}
