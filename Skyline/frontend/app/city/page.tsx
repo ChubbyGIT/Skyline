@@ -1,7 +1,8 @@
 "use client";
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useStore } from "@/store/useStore";
 import dynamic from "next/dynamic";
 
 // Never SSR Three.js — browser WebGL only
@@ -22,12 +23,25 @@ const BackgroundMusic = dynamic(
 
 export default function CityPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const processInviteToken = useStore(s => s.processInviteToken);
 
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         window.location.href = '/';
+        return;
+      }
+
+      // Process invite token if present (auto-connect friend after signup)
+      const inviteToken = searchParams.get('invite_token');
+      if (inviteToken) {
+        await processInviteToken(inviteToken);
+        // Clean up URL — remove the token query param
+        const url = new URL(window.location.href);
+        url.searchParams.delete('invite_token');
+        window.history.replaceState({}, '', url.pathname);
       }
     };
     checkUser();

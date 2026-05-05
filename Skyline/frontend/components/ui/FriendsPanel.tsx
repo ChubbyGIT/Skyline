@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { useStore, FriendProfile, FriendRequest as FRType } from '@/store/useStore';
-import { Users, Search, UserPlus, Mail, X, Check, XCircle, ExternalLink } from 'lucide-react';
+import { Users, Search, UserPlus, Mail, X, Check, XCircle, ExternalLink, Send, AlertCircle } from 'lucide-react';
 
 const glass: React.CSSProperties = {
   background: 'rgba(255,255,255,0.06)', borderRadius: '16px',
@@ -94,25 +94,46 @@ export const FriendsPanel: React.FC = () => {
     friends, friendRequests, friendsLoading, currentUserProfile,
     fetchFriends, fetchFriendRequests, searchUsers,
     sendFriendRequest, acceptFriendRequest, declineFriendRequest,
-    sendEmailInvite,
+    sendEmailInvite, searchByEmail,
   } = useStore();
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<FriendProfile[]>([]);
   const [searching, setSearching] = useState(false);
   const [selectedFriend, setSelectedFriend] = useState<FriendProfile | null>(null);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteSent, setInviteSent] = useState(false);
   const [sentIds, setSentIds] = useState<Set<string>>(new Set());
+
+  // Email invite state
+  const [inviteStatus, setInviteStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [inviteError, setInviteError] = useState('');
+  const [emailSearchResult, setEmailSearchResult] = useState<{ exists: boolean; user_id?: string; display_name?: string; username?: string } | null>(null);
+
+  const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 
   // Debounced search
   useEffect(() => {
-    if (query.length < 2) { setResults([]); return; }
+    if (query.length < 2) { setResults([]); setEmailSearchResult(null); return; }
     setSearching(true);
+    setInviteStatus('idle');
+
     const t = setTimeout(async () => {
-      const r = await searchUsers(query);
-      setResults(r); setSearching(false);
-    }, 300);
+      // If it looks like an email, do exact email search first
+      if (isEmail(query)) {
+        const emailResult = await searchByEmail(query.trim());
+        setEmailSearchResult(emailResult);
+        if (emailResult.exists) {
+          const r = await searchUsers(query);
+          setResults(r);
+        } else {
+          setResults([]);
+        }
+      } else {
+        setEmailSearchResult(null);
+        const r = await searchUsers(query);
+        setResults(r);
+      }
+      setSearching(false);
+    }, 400);
     return () => clearTimeout(t);
   }, [query]);
 
@@ -132,11 +153,21 @@ export const FriendsPanel: React.FC = () => {
   };
 
   const handleInvite = async () => {
-    if (!inviteEmail) return;
-    await sendEmailInvite(inviteEmail, 'Come check out my Skyline city!');
-    setInviteSent(true); setInviteEmail('');
-    setTimeout(() => setInviteSent(false), 3000);
+    if (!isEmail(query)) return;
+    setInviteStatus('sending');
+    setInviteError('');
+
+    const result = await sendEmailInvite(query.trim(), 'Come check out my Skyline city!');
+
+    if (result.success) {
+      setInviteStatus('sent');
+    } else {
+      setInviteStatus('error');
+      setInviteError(result.error || 'Failed to send invite');
+    }
   };
+
+
 
   return (
     <>
@@ -160,7 +191,7 @@ export const FriendsPanel: React.FC = () => {
         <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.4, color: '#6ee7b7' }} />
       </div>
 
-      {/* Search Results */}
+      {/* Search Results (existing users found) */}
       {results.length > 0 && (
         <div style={{ ...glass, padding: 8, marginBottom: 14, maxHeight: 180, overflowY: 'auto' }}>
           {results.map((u: FriendProfile) => {
@@ -205,28 +236,66 @@ export const FriendsPanel: React.FC = () => {
       )}
       {searching && <div style={{ fontSize: 11, color: '#6ee7b760', marginBottom: 12, textAlign: 'center' }}>Searching...</div>}
 
-      {/* No results — copy invite link */}
-      {query.length >= 2 && !searching && results.length === 0 && (
+      {/* ── Email Invite Section (email typed, user NOT found) ── */}
+      {isEmail(query) && !searching && emailSearchResult && !emailSearchResult.exists && (
         <div style={{ ...glass, padding: 14, marginBottom: 14 }}>
-          <div style={{ fontSize: 12, color: '#d1fae5cc', marginBottom: 10 }}>No users found. Share Skyline with them!</div>
-          <button onClick={async () => {
-            const link = window.location.origin;
-            await navigator.clipboard.writeText(`Join me on Skyline — build your memory city! ${link}`);
-            // Also store in DB if they entered an email-like query
-            if (query.includes('@')) {
-              await sendEmailInvite(query, 'Come check out my Skyline city!');
-            }
-            setInviteSent(true);
-            setTimeout(() => setInviteSent(false), 3000);
-          }} style={{
-            width: '100%', padding: '8px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600,
-            background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.3)',
-            color: '#34d399', cursor: 'pointer', fontFamily: 'inherit',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            transition: 'all 0.2s',
-          }}>
-            {inviteSent ? <><Check size={12} /> Copied!</> : <><ExternalLink size={12} /> Copy Invite Link</>}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <Mail size={14} style={{ color: '#a78bfa' }} />
+            <div style={{ fontSize: 12, color: '#d1fae5cc' }}>
+              <strong style={{ color: '#e9d5ff' }}>{query.trim()}</strong> is not on Skyline yet
+            </div>
+          </div>
+
+          {inviteStatus === 'idle' && (
+            <button onClick={handleInvite} style={{
+              width: '100%', padding: '10px 12px', borderRadius: 10, fontSize: 12, fontWeight: 600,
+              background: 'linear-gradient(135deg, rgba(168,85,247,0.2), rgba(139,92,246,0.15))',
+              border: '1px solid rgba(168,85,247,0.35)',
+              color: '#c4b5fd', cursor: 'pointer', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              transition: 'all 0.2s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 0 15px rgba(168,85,247,0.3)'; }}
+              onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}
+            >
+              <Send size={12} /> Invite to Skyline
+            </button>
+          )}
+
+          {inviteStatus === 'sending' && (
+            <div style={{ textAlign: 'center', padding: '8px 0', fontSize: 11, color: '#a78bfa' }}>
+              Sending invite email...
+            </div>
+          )}
+
+          {inviteStatus === 'sent' && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '8px 12px', borderRadius: 8,
+              background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.3)',
+              fontSize: 11, color: '#34d399', fontWeight: 600,
+            }}>
+              <Check size={12} /> Invite email sent to {query.trim()}
+            </div>
+          )}
+
+          {inviteStatus === 'error' && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '8px 12px', borderRadius: 8,
+              background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+              fontSize: 11, color: '#ef4444',
+            }}>
+              <AlertCircle size={12} /> {inviteError}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* No results for name search (non-email) */}
+      {query.length >= 2 && !isEmail(query) && !searching && results.length === 0 && (
+        <div style={{ ...glass, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 12, color: '#d1fae5cc', marginBottom: 8 }}>No users found. Try searching by email to invite them!</div>
         </div>
       )}
 

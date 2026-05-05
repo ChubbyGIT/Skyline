@@ -174,7 +174,9 @@ interface CityActions {
   acceptFriendRequest: (requestId: string) => Promise<void>;
   declineFriendRequest: (requestId: string) => Promise<void>;
   removeFriend: (friendId: string) => Promise<void>;
-  sendEmailInvite: (email: string, message: string) => Promise<void>;
+  sendEmailInvite: (email: string, message: string) => Promise<{ success: boolean; invite_url?: string; error?: string }>;
+  searchByEmail: (email: string) => Promise<{ exists: boolean; user_id?: string; display_name?: string; username?: string }>;
+  processInviteToken: (token: string) => Promise<void>;
   fetchPublicCity: (userId: string) => Promise<void>;
   setViewMode: (active: boolean, userId?: string, userName?: string) => void;
   // NPC User actions
@@ -743,18 +745,73 @@ export const useStore = create<CityStore>((set, get) => ({
     await get().fetchFriends();
   },
 
-  sendEmailInvite: async (email: string, message: string) => {
+  sendEmailInvite: async (email: string, _message: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return { success: false, error: 'Not authenticated' };
+
+    try {
+      const res = await fetch('/api/send-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender_id: session.user.id,
+          receiver_email: email,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error('Invite error:', data.error);
+        return { success: false, error: data.error };
+      }
+
+      return { success: true, invite_url: data.invite_url };
+    } catch (err) {
+      console.error('Failed to send invite:', err);
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  searchByEmail: async (email: string) => {
+    try {
+      const res = await fetch('/api/search-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) return { exists: false };
+      return data;
+    } catch {
+      return { exists: false };
+    }
+  },
+
+  processInviteToken: async (token: string) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
 
-    // Store invitation in DB
-    await supabase
-      .from('invitations')
-      .insert({
-        inviter_id: session.user.id,
-        invitee_email: email,
-        message: message || 'Come check out my Skyline city!',
+    try {
+      const res = await fetch('/api/accept-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invite_token: token,
+          new_user_id: session.user.id,
+        }),
       });
+
+      const data = await res.json();
+      if (data.success) {
+        console.log('Invite accepted:', data.message);
+        // Refresh friends list
+        await get().fetchFriends();
+      }
+    } catch (err) {
+      console.error('Failed to process invite token:', err);
+    }
   },
 
   fetchPublicCity: async (userId: string) => {
