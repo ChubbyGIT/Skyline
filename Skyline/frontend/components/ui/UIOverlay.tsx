@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useStore, MemoryCategory, FriendProfile, FriendRequest as FriendRequestType } from '@/store/useStore';
+import { useStore, MemoryCategory, FriendProfile, FriendRequest as FriendRequestType, CityUser } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
-import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock, HelpCircle, Users, Search, UserPlus, Mail, ExternalLink, Check, XCircle } from 'lucide-react';
+import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock, HelpCircle, Users, Search, UserPlus, Mail, ExternalLink, Check, XCircle, Palette, UserRound } from 'lucide-react';
 import { CATEGORY_COLORS } from '@/store/useStore';
 import { FriendsPanel } from './FriendsPanel';
 
@@ -50,6 +50,16 @@ export const UIOverlay: React.FC = () => {
         sendEmailInvite,
         viewMode,
         viewingUserName,
+        // NPC Users
+        npcUsers,
+        selectedNPCId,
+        isUserModalOpen,
+        fetchNPCUsers,
+        addNPCUser,
+        removeNPCUser,
+        updateNPCColor,
+        selectNPC,
+        setUserModalOpen,
     } = useStore() as any;
 
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -84,6 +94,14 @@ export const UIOverlay: React.FC = () => {
         date: new Date().toISOString().split('T')[0],
         image: null as File | null
     });
+    // NPC User form state
+    const [npcFormData, setNpcFormData] = useState({
+        name: '',
+        description: '',
+        gender: 'male' as 'male' | 'female',
+    });
+    const [isGenderDropdownOpen, setIsGenderDropdownOpen] = useState(false);
+    const [npcColorPickerValue, setNpcColorPickerValue] = useState('#3498db');
 
     useEffect(() => {
         if (isModalOpen && !draftId) {
@@ -106,6 +124,7 @@ export const UIOverlay: React.FC = () => {
         fetchCurrentProfile();
         fetchFriends();
         fetchFriendRequests();
+        fetchNPCUsers();
     }, []);
 
     // Debounced friend search
@@ -190,6 +209,19 @@ export const UIOverlay: React.FC = () => {
             image: null
         });
         setIsDropdownOpen(false);
+    };
+
+    const handleNPCSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await addNPCUser(npcFormData);
+        setUserModalOpen(false);
+        setNpcFormData({ name: '', description: '', gender: 'male' });
+    };
+
+    const handleCancelNPCModal = () => {
+        setUserModalOpen(false);
+        setNpcFormData({ name: '', description: '', gender: 'male' });
+        setIsGenderDropdownOpen(false);
     };
 
     /* ── 2D Map Export ── */
@@ -616,40 +648,74 @@ export const UIOverlay: React.FC = () => {
                                     {memories.length}
                                 </div>
                             </div>
+                            {/* Add Memory + Create User Row */}
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+                                <button
+                                    onClick={() => setIsModalOpen(true)}
+                                    style={{
+                                        ...glassCard,
+                                        flex: 1,
+                                        padding: '14px',
+                                        borderRadius: '999px',
+                                        background: 'rgba(16,185,129,0.15)',
+                                        border: '1px solid rgba(52,211,153,0.4)',
+                                        color: '#a7f3d0',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        fontSize: '13px',
+                                        letterSpacing: '0.5px',
+                                        transition: 'all 0.2s ease',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = 'rgba(16,185,129,0.25)';
+                                        e.currentTarget.style.boxShadow = '0 0 20px rgba(52,211,153,0.4)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = 'rgba(16,185,129,0.15)';
+                                        e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.4)';
+                                    }}
+                                >
+                                    <Plus size={16} /> New Memory
+                                </button>
 
-                            {/* Add Memory Button */}
-                            <button
-                                onClick={() => setIsModalOpen(true)}
-                                style={{
-                                    ...glassCard,
-                                    width: '100%',
-                                    padding: '14px',
-                                    borderRadius: '999px',
-                                    background: 'rgba(16,185,129,0.15)',
-                                    border: '1px solid rgba(52,211,153,0.4)',
-                                    color: '#a7f3d0',
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
-                                    marginBottom: '20px',
-                                    fontSize: '13px',
-                                    letterSpacing: '0.5px',
-                                    transition: 'all 0.2s ease',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '8px',
-                                }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = 'rgba(16,185,129,0.25)';
-                                    e.currentTarget.style.boxShadow = '0 0 20px rgba(52,211,153,0.4)';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = 'rgba(16,185,129,0.15)';
-                                    e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.4)';
-                                }}
-                            >
-                                <Plus size={16} /> New Memory
-                            </button>
+                                {/* Create User Icon Button */}
+                                <button
+                                    onClick={() => setUserModalOpen(true)}
+                                    title="Create User (NPC)"
+                                    style={{
+                                        ...glassCard,
+                                        width: '48px',
+                                        height: '48px',
+                                        borderRadius: '50%',
+                                        background: 'rgba(168,85,247,0.12)',
+                                        border: '1px solid rgba(168,85,247,0.35)',
+                                        color: '#c4b5fd',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s ease',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        flexShrink: 0,
+                                        padding: 0,
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = 'rgba(168,85,247,0.25)';
+                                        e.currentTarget.style.boxShadow = '0 0 18px rgba(168,85,247,0.4)';
+                                        e.currentTarget.style.color = '#e9d5ff';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = 'rgba(168,85,247,0.12)';
+                                        e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.4)';
+                                        e.currentTarget.style.color = '#c4b5fd';
+                                    }}
+                                >
+                                    <UserRound size={18} />
+                                </button>
+                            </div>
 
                             {/* Section Title */}
                             <div style={{ fontSize: '11px', color: '#6ee7b7', marginBottom: '10px', letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 600 }}>
@@ -1465,6 +1531,175 @@ export const UIOverlay: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {/* ─── NPC USER CREATION MODAL ─── */}
+            {isUserModalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center pointer-events-auto overflow-y-auto"
+                    style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}
+                    onClick={handleCancelNPCModal}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+                            background: 'rgba(6, 40, 30, 0.9)',
+                            backdropFilter: 'blur(20px)',
+                            WebkitBackdropFilter: 'blur(20px)',
+                            border: '1px solid rgba(168,85,247,0.3)',
+                            boxShadow: '0 25px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)',
+                            borderRadius: '20px',
+                            position: 'relative' as const,
+                            width: '30vw',
+                            minWidth: '360px',
+                            padding: '22px 26px',
+                        }}
+                    >
+                        {/* Corner glow */}
+                        <div style={{ position: 'absolute', width: '180px', height: '180px', background: '#a855f7', filter: 'blur(100px)', top: '-40px', left: '-40px', opacity: 0.2, pointerEvents: 'none' }} />
+                        <div style={{ position: 'absolute', width: '150px', height: '150px', background: '#9b59b6', filter: 'blur(100px)', bottom: '-30px', right: '-30px', opacity: 0.12, pointerEvents: 'none' }} />
+
+                        {/* Close */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); handleCancelNPCModal(); }}
+                            style={{
+                                position: 'absolute', top: '20px', right: '20px',
+                                zIndex: 10,
+                                width: '32px', height: '32px', borderRadius: '50%',
+                                border: '1px solid rgba(255,255,255,0.15)',
+                                background: 'transparent', color: '#c4b5fd',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                cursor: 'pointer', transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#e9d5ff'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#c4b5fd'; }}
+                        >
+                            <X size={16} />
+                        </button>
+
+                        {/* Header */}
+                        <div style={{ marginBottom: '18px', paddingBottom: '14px', borderBottom: '1px solid rgba(255,255,255,0.08)', position: 'relative', zIndex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                                <div style={{
+                                    width: '32px', height: '32px', borderRadius: '10px',
+                                    background: 'linear-gradient(135deg, rgba(168,85,247,0.3), rgba(139,92,246,0.15))',
+                                    border: '1px solid rgba(168,85,247,0.3)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                    <UserRound size={16} color="#a855f7" />
+                                </div>
+                                <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#e9d5ff', letterSpacing: '-0.3px', margin: 0, lineHeight: 1.2 }}>Create User</h2>
+                            </div>
+                            <p style={{ fontSize: '11px', color: '#a78bfa80', fontWeight: 400, marginTop: '6px' }}>Add a new person NPC to your city</p>
+                        </div>
+
+                        <form onSubmit={handleNPCSubmit} style={{ position: 'relative', zIndex: 1 }}>
+                            {/* Name */}
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={{ display: 'block', fontSize: '10px', fontWeight: 600, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '6px' }}>Name</label>
+                                <input
+                                    style={{
+                                        width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                        background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                                        color: '#e9d5ff', outline: 'none', fontSize: '13px', fontWeight: 500,
+                                        fontFamily: 'inherit', transition: 'all 0.2s', boxSizing: 'border-box',
+                                    }}
+                                    onFocus={(e) => { e.target.style.borderColor = 'rgba(168,85,247,0.5)'; e.target.style.boxShadow = '0 0 10px rgba(168,85,247,0.15)'; }}
+                                    onBlur={(e) => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none'; }}
+                                    required
+                                    placeholder="Enter user name..."
+                                    value={npcFormData.name}
+                                    onChange={e => setNpcFormData({ ...npcFormData, name: e.target.value })}
+                                />
+                            </div>
+
+                            {/* Description */}
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={{ display: 'block', fontSize: '10px', fontWeight: 600, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '6px' }}>Description</label>
+                                <input
+                                    style={{
+                                        width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                        background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                                        color: '#e9d5ff', outline: 'none', fontSize: '13px', fontWeight: 400,
+                                        fontFamily: 'inherit', transition: 'all 0.2s', boxSizing: 'border-box',
+                                    }}
+                                    onFocus={(e) => { e.target.style.borderColor = 'rgba(168,85,247,0.5)'; e.target.style.boxShadow = '0 0 10px rgba(168,85,247,0.15)'; }}
+                                    onBlur={(e) => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none'; }}
+                                    placeholder="One-line description..."
+                                    value={npcFormData.description}
+                                    onChange={e => setNpcFormData({ ...npcFormData, description: e.target.value })}
+                                />
+                            </div>
+
+                            {/* Gender dropdown */}
+                            <div style={{ marginBottom: '22px' }}>
+                                <label style={{ display: 'block', fontSize: '10px', fontWeight: 600, color: '#c4b5fd', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '6px' }}>Gender</label>
+                                <div style={{ position: 'relative' }}>
+                                    <div
+                                        onClick={() => setIsGenderDropdownOpen(!isGenderDropdownOpen)}
+                                        style={{
+                                            width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                            background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                                            color: '#e9d5ff', fontSize: '13px', cursor: 'pointer',
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            transition: 'all 0.2s', boxSizing: 'border-box',
+                                        }}
+                                    >
+                                        <span>{npcFormData.gender === 'male' ? '♂ Male' : '♀ Female'}</span>
+                                        <svg width="12" height="7" viewBox="0 0 14 8" fill="none" style={{ transform: isGenderDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                                            <path d="M1 1L7 7L13 1" stroke="#c4b5fd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </svg>
+                                    </div>
+                                    {isGenderDropdownOpen && (
+                                        <div style={{
+                                            position: 'absolute', top: '100%', left: 0, marginTop: '6px',
+                                            width: '100%', borderRadius: '10px', overflow: 'hidden', zIndex: 50,
+                                            background: 'rgba(6, 40, 30, 0.95)', border: '1px solid rgba(255,255,255,0.1)',
+                                            boxShadow: '0 15px 40px rgba(0,0,0,0.5)',
+                                        }}>
+                                            {(['male', 'female'] as const).map(g => (
+                                                <div
+                                                    key={g}
+                                                    onClick={() => { setNpcFormData({ ...npcFormData, gender: g }); setIsGenderDropdownOpen(false); }}
+                                                    style={{
+                                                        padding: '10px 14px', color: '#e9d5ff', fontSize: '13px',
+                                                        cursor: 'pointer', transition: 'all 0.15s', fontWeight: 500,
+                                                    }}
+                                                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(168,85,247,0.15)'; e.currentTarget.style.color = '#c4b5fd'; }}
+                                                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#e9d5ff'; }}
+                                                >
+                                                    {g === 'male' ? '♂ Male' : '♀ Female'}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Submit */}
+                            <button
+                                type="submit"
+                                style={{
+                                    width: '100%', padding: '14px', borderRadius: '999px',
+                                    background: 'linear-gradient(135deg, #a855f7, #7c3aed)',
+                                    color: 'white', fontWeight: 700, fontSize: '13px',
+                                    textTransform: 'uppercase', letterSpacing: '1.5px',
+                                    border: 'none', cursor: 'pointer',
+                                    boxShadow: '0 8px 25px rgba(168,85,247,0.4)',
+                                    transition: 'all 0.2s',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 12px 35px rgba(168,85,247,0.6)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 8px 25px rgba(168,85,247,0.4)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                            >
+                                Spawn User
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* NPC details are now shown as hover popups on the 3D characters (PersonNPC.tsx) */}
+
             {/* ─── CUSTOM CONFIRMATION MODAL ─── */}
             {confirmAction && (
                 <div

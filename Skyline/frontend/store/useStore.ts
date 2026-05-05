@@ -72,6 +72,21 @@ export interface FriendRequest {
   toProfile?: FriendProfile;
 }
 
+export interface CityUser {
+  id: string;
+  ownerId?: string;
+  name: string;
+  description: string;
+  gender: 'male' | 'female';
+  color: string;
+  position: Vector3Position;
+  movementState: 'idle' | 'walking';
+  // Internal movement state (not persisted)
+  _targetX?: number;
+  _targetZ?: number;
+  _waitUntil?: number;
+}
+
 interface MemoryInput {
   title: string;
   caption?: string;
@@ -127,6 +142,10 @@ interface CityState {
   viewMode: boolean;
   viewingUserId: string | null;
   viewingUserName: string | null;
+  // NPC Users
+  npcUsers: CityUser[];
+  selectedNPCId: string | null;
+  isUserModalOpen: boolean;
 }
 
 interface CityActions {
@@ -158,6 +177,14 @@ interface CityActions {
   sendEmailInvite: (email: string, message: string) => Promise<void>;
   fetchPublicCity: (userId: string) => Promise<void>;
   setViewMode: (active: boolean, userId?: string, userName?: string) => void;
+  // NPC User actions
+  fetchNPCUsers: () => Promise<void>;
+  addNPCUser: (input: { name: string; description: string; gender: 'male' | 'female' }) => Promise<void>;
+  removeNPCUser: (id: string) => Promise<void>;
+  updateNPCColor: (id: string, color: string) => Promise<void>;
+  selectNPC: (id: string | null) => void;
+  setUserModalOpen: (open: boolean) => void;
+  tickNPCMovement: (delta: number) => void;
 }
 
 export type CityStore = CityState & CityActions;
@@ -183,6 +210,10 @@ export const useStore = create<CityStore>((set, get) => ({
   viewMode: false,
   viewingUserId: null,
   viewingUserName: null,
+  // NPC Users
+  npcUsers: [],
+  selectedNPCId: null,
+  isUserModalOpen: false,
 
   fetchMemories: async () => {
     set({ isLoading: true });
@@ -795,6 +826,227 @@ export const useStore = create<CityStore>((set, get) => ({
       viewingUserName: userName || null,
     });
   },
+
+  /* ─── NPC User actions ─── */
+
+  fetchNPCUsers: async () => {
+    const { data, error } = await supabase
+      .from('city_users')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching NPC users:', error.message);
+      return;
+    }
+
+    const users: CityUser[] = (data || []).map((u: any) => ({
+      id: u.id,
+      ownerId: u.owner_id,
+      name: u.name,
+      description: u.description || '',
+      gender: u.gender as 'male' | 'female',
+      color: u.color,
+      position: { x: u.pos_x, y: u.pos_y || 0, z: u.pos_z },
+      movementState: 'idle' as const,
+      _targetX: u.pos_x,
+      _targetZ: u.pos_z,
+      _waitUntil: 0,
+    }));
+
+    set({ npcUsers: users });
+  },
+
+  addNPCUser: async (input) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const { buildings, gridSize, npcUsers } = get();
+    // Find a valid spawn position (not on a building, not on another NPC)
+    const pos = findNPCSpawnPosition(buildings, npcUsers, gridSize);
+    if (!pos) {
+      console.error('No valid spawn position found for NPC');
+      return;
+    }
+
+    // Random vibrant color for t-shirt
+    const colors = [
+      '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6',
+      '#1abc9c', '#e67e22', '#e84393', '#00cec9', '#6c5ce7',
+      '#fd79a8', '#00b894', '#fdcb6e', '#74b9ff', '#a29bfe',
+    ];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+
+    const { data, error } = await supabase
+      .from('city_users')
+      .insert({
+        owner_id: session.user.id,
+        name: input.name,
+        description: input.description,
+        gender: input.gender,
+        color,
+        pos_x: pos.x,
+        pos_y: 0,
+        pos_z: pos.z,
+      })
+      .select();
+
+    if (error) {
+      console.error('Error creating NPC user:', error.message);
+      return;
+    }
+
+    const u = data[0];
+    const newUser: CityUser = {
+      id: u.id,
+      ownerId: u.owner_id,
+      name: u.name,
+      description: u.description || '',
+      gender: u.gender as 'male' | 'female',
+      color: u.color,
+      position: { x: u.pos_x, y: 0, z: u.pos_z },
+      movementState: 'idle',
+      _targetX: u.pos_x,
+      _targetZ: u.pos_z,
+      _waitUntil: 0,
+    };
+
+    set({ npcUsers: [...get().npcUsers, newUser] });
+  },
+
+  removeNPCUser: async (id) => {
+    const { error } = await supabase
+      .from('city_users')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting NPC user:', error.message);
+      return;
+    }
+
+    set((s) => ({
+      npcUsers: s.npcUsers.filter(u => u.id !== id),
+      selectedNPCId: s.selectedNPCId === id ? null : s.selectedNPCId,
+    }));
+  },
+
+  updateNPCColor: async (id, color) => {
+    const { error } = await supabase
+      .from('city_users')
+      .update({ color, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error updating NPC color:', error.message);
+      return;
+    }
+
+    set((s) => ({
+      npcUsers: s.npcUsers.map(u => u.id === id ? { ...u, color } : u),
+    }));
+  },
+
+  selectNPC: (id) => set({ selectedNPCId: id, selectedBuildingId: null }),
+
+  setUserModalOpen: (open) => set({ isUserModalOpen: open }),
+
+  tickNPCMovement: (delta) => {
+    const { npcUsers, buildings, gridSize } = get();
+    if (npcUsers.length === 0) return;
+
+    const now = Date.now();
+    let changed = false;
+    const updated = npcUsers.map(u => {
+      const user = { ...u };
+
+      // Wait phase
+      if (user._waitUntil && now < user._waitUntil) {
+        user.movementState = 'idle';
+        return user;
+      }
+
+      // Pick a new target if we don't have one or reached it
+      const atTarget = user._targetX !== undefined && user._targetZ !== undefined &&
+        Math.abs(user.position.x - user._targetX) < 0.05 &&
+        Math.abs(user.position.z - user._targetZ) < 0.05;
+
+      if (atTarget || user._targetX === undefined || user._targetZ === undefined) {
+        // Wait for 1-4 seconds before moving again
+        if (atTarget && (!user._waitUntil || now >= user._waitUntil)) {
+          user._waitUntil = now + 1000 + Math.random() * 3000;
+          user.movementState = 'idle';
+          // Persist position periodically
+          supabase.from('city_users').update({
+            pos_x: user.position.x,
+            pos_z: user.position.z,
+          }).eq('id', user.id).then();
+          changed = true;
+          return user;
+        }
+
+        // Pick random nearby target
+        const range = 2 + Math.random() * 3;
+        let attempts = 0;
+        let newX: number, newZ: number;
+        do {
+          newX = user.position.x + (Math.random() - 0.5) * range * 2;
+          newZ = user.position.z + (Math.random() - 0.5) * range * 2;
+          // Clamp to grid
+          newX = Math.max(0.5, Math.min(gridSize - 0.5, newX));
+          newZ = Math.max(0.5, Math.min(gridSize - 0.5, newZ));
+          attempts++;
+        } while (attempts < 10 && isPositionBlockedForNPC(newX, newZ, buildings, npcUsers, user.id));
+
+        if (attempts < 10) {
+          user._targetX = newX;
+          user._targetZ = newZ;
+          user._waitUntil = undefined;
+          changed = true;
+        }
+      }
+
+      // Move toward target
+      if (user._targetX !== undefined && user._targetZ !== undefined) {
+        const dx = user._targetX - user.position.x;
+        const dz = user._targetZ - user.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+
+        if (dist > 0.05) {
+          const speed = 0.6; // units per second
+          const step = Math.min(speed * delta, dist);
+          const nx = user.position.x + (dx / dist) * step;
+          const nz = user.position.z + (dz / dist) * step;
+
+          // Check collision at next position
+          if (!isPositionBlockedForNPC(nx, nz, buildings, npcUsers, user.id)) {
+            user.position = { ...user.position, x: nx, z: nz };
+            user.movementState = 'walking';
+            changed = true;
+          } else {
+            // Blocked — pick a new target next tick
+            user._targetX = undefined;
+            user._targetZ = undefined;
+            user.movementState = 'idle';
+            changed = true;
+          }
+        } else {
+          // Arrived
+          user.position = { ...user.position, x: user._targetX, z: user._targetZ };
+          user._targetX = undefined;
+          user._targetZ = undefined;
+          user.movementState = 'idle';
+          changed = true;
+        }
+      }
+
+      return user;
+    });
+
+    if (changed) {
+      set({ npcUsers: updated });
+    }
+  },
 }));
 
 function isValidPosition(pos: { x: number; z: number }, buildings: Building[], isCore: boolean, gridSize: number) {
@@ -830,4 +1082,55 @@ function findValidPosition(buildings: Building[], gridSize: number, isCore: bool
     }
   }
   return null;
+}
+
+/* ─── NPC helpers ─── */
+
+function findNPCSpawnPosition(
+  buildings: Building[],
+  npcUsers: CityUser[],
+  gridSize: number
+): { x: number; z: number } | null {
+  // Try random positions up to 50 times
+  for (let i = 0; i < 50; i++) {
+    const x = 0.5 + Math.random() * (gridSize - 1);
+    const z = 0.5 + Math.random() * (gridSize - 1);
+    if (!isPositionBlockedForNPC(x, z, buildings, npcUsers, '')) {
+      return { x, z };
+    }
+  }
+  // Fallback: grid center
+  return { x: gridSize / 2, z: gridSize / 2 };
+}
+
+function isPositionBlockedForNPC(
+  x: number,
+  z: number,
+  buildings: Building[],
+  npcUsers: CityUser[],
+  selfId: string
+): boolean {
+  // Check building collision (buildings occupy a footprint around their position)
+  for (const b of buildings) {
+    const footprint = b.isCore ? 5 : 2;
+    const half = footprint / 2;
+    if (
+      x >= b.position.x - half && x <= b.position.x + half &&
+      z >= b.position.z - half && z <= b.position.z + half
+    ) {
+      return true;
+    }
+  }
+
+  // Check other NPC collision (minimum distance of 0.4 units)
+  for (const u of npcUsers) {
+    if (u.id === selfId) continue;
+    const dx = x - u.position.x;
+    const dz = z - u.position.z;
+    if (Math.sqrt(dx * dx + dz * dz) < 0.4) {
+      return true;
+    }
+  }
+
+  return false;
 }

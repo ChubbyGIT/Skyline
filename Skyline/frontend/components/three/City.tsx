@@ -5,7 +5,8 @@ import { useStore } from '@/store/useStore';
 import { Building } from './Building';
 import { Castle } from './Castle';
 import { House } from './House';
-import { ThreeEvent } from '@react-three/fiber';
+import { PersonNPC } from './PersonNPC';
+import { ThreeEvent, useFrame } from '@react-three/fiber';
 
 export const City: React.FC = () => {
   const buildings = useStore(s => s.buildings);
@@ -21,6 +22,13 @@ export const City: React.FC = () => {
   const timelineActive = useStore(s => s.timelineActive);
   const timelinePercent = useStore(s => s.timelinePercent);
   const memories = useStore(s => s.memories);
+  const npcUsers = useStore(s => s.npcUsers);
+  const tickNPCMovement = useStore(s => s.tickNPCMovement);
+
+  // Tick NPC movement each frame
+  useFrame((_, delta) => {
+    tickNPCMovement(Math.min(delta, 0.05)); // Cap delta to avoid huge jumps
+  });
 
   // When timeline is active, compute which buildings are visible based on construction order
   const visibleIds = useMemo(() => {
@@ -157,6 +165,11 @@ export const City: React.FC = () => {
         ) : (
           <Building key={b.id} data={b} />
         )
+      ))}
+
+      {/* NPC Users (Person NPCs) */}
+      {npcUsers.map((npc) => (
+        <PersonNPC key={npc.id} data={npc} />
       ))}
     </group>
   );
