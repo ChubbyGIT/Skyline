@@ -957,26 +957,38 @@ export const useStore = create<CityStore>((set, get) => ({
 
     const now = Date.now();
     let changed = false;
+
+    // Build a mutable snapshot of current positions so earlier NPCs
+    // get their updated positions reflected when checking later ones
+    const livePositions: Map<string, { x: number; z: number }> = new Map();
+    for (const u of npcUsers) {
+      livePositions.set(u.id, { x: u.position.x, z: u.position.z });
+    }
+
     const updated = npcUsers.map(u => {
       const user = { ...u };
 
-      // Wait phase
+      // ── Wait phase (idle pause between walks) ──
       if (user._waitUntil && now < user._waitUntil) {
         user.movementState = 'idle';
         return user;
       }
 
-      // Pick a new target if we don't have one or reached it
-      const atTarget = user._targetX !== undefined && user._targetZ !== undefined &&
-        Math.abs(user.position.x - user._targetX) < 0.05 &&
-        Math.abs(user.position.z - user._targetZ) < 0.05;
+      // ── Check if arrived at target ──
+      const hasTarget = user._targetX !== undefined && user._targetZ !== undefined;
+      const atTarget = hasTarget &&
+        Math.abs(user.position.x - user._targetX!) < 0.08 &&
+        Math.abs(user.position.z - user._targetZ!) < 0.08;
 
-      if (atTarget || user._targetX === undefined || user._targetZ === undefined) {
-        // Wait for 1-4 seconds before moving again
-        if (atTarget && (!user._waitUntil || now >= user._waitUntil)) {
-          user._waitUntil = now + 1000 + Math.random() * 3000;
+      // ── Pick a new target ──
+      if (!hasTarget || atTarget) {
+        // If just arrived, idle for 1.5–4 seconds
+        if (atTarget) {
+          user._waitUntil = now + 1500 + Math.random() * 2500;
           user.movementState = 'idle';
-          // Persist position periodically
+          user._targetX = undefined;
+          user._targetZ = undefined;
+          // Persist position to DB every arrival
           supabase.from('city_users').update({
             pos_x: user.position.x,
             pos_z: user.position.z,
@@ -985,54 +997,89 @@ export const useStore = create<CityStore>((set, get) => ({
           return user;
         }
 
-        // Pick random nearby target
-        const range = 2 + Math.random() * 3;
-        let attempts = 0;
-        let newX: number, newZ: number;
-        do {
-          newX = user.position.x + (Math.random() - 0.5) * range * 2;
-          newZ = user.position.z + (Math.random() - 0.5) * range * 2;
-          // Clamp to grid
-          newX = Math.max(0.5, Math.min(gridSize - 0.5, newX));
-          newZ = Math.max(0.5, Math.min(gridSize - 0.5, newZ));
-          attempts++;
-        } while (attempts < 10 && isPositionBlockedForNPC(newX, newZ, buildings, npcUsers, user.id));
+        // Pick a new random target in a definitive direction
+        const minDist = 1.5;
+        const maxDist = 4;
+        let bestTarget: { x: number; z: number } | null = null;
 
-        if (attempts < 10) {
-          user._targetX = newX;
-          user._targetZ = newZ;
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = minDist + Math.random() * (maxDist - minDist);
+          let nx = user.position.x + Math.cos(angle) * dist;
+          let nz = user.position.z + Math.sin(angle) * dist;
+
+          // Clamp within grid bounds (with margin)
+          nx = Math.max(0.5, Math.min(gridSize - 0.5, nx));
+          nz = Math.max(0.5, Math.min(gridSize - 0.5, nz));
+
+          // Check if target position itself is clear
+          if (isPositionBlockedForNPC(nx, nz, buildings, livePositions, user.id, 0.5)) {
+            continue;
+          }
+
+          // Sample the path to the target for building collision
+          if (isPathClear(user.position.x, user.position.z, nx, nz, buildings, 0.3)) {
+            bestTarget = { x: nx, z: nz };
+            break;
+          }
+        }
+
+        if (bestTarget) {
+          user._targetX = bestTarget.x;
+          user._targetZ = bestTarget.z;
           user._waitUntil = undefined;
           changed = true;
+        } else {
+          // No valid target found — wait briefly and retry
+          user._waitUntil = now + 500 + Math.random() * 1000;
+          user.movementState = 'idle';
+          changed = true;
+          return user;
         }
       }
 
-      // Move toward target
+      // ── Move toward target ──
       if (user._targetX !== undefined && user._targetZ !== undefined) {
         const dx = user._targetX - user.position.x;
         const dz = user._targetZ - user.position.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
 
-        if (dist > 0.05) {
-          const speed = 0.6; // units per second
+        if (dist > 0.08) {
+          const speed = 0.5 + Math.random() * 0.15;
           const step = Math.min(speed * delta, dist);
-          const nx = user.position.x + (dx / dist) * step;
-          const nz = user.position.z + (dz / dist) * step;
+          const dirX = dx / dist;
+          const dirZ = dz / dist;
+          const nx = user.position.x + dirX * step;
+          const nz = user.position.z + dirZ * step;
 
-          // Check collision at next position
-          if (!isPositionBlockedForNPC(nx, nz, buildings, npcUsers, user.id)) {
+          // Check collision at next step position
+          if (!isPositionBlockedForNPC(nx, nz, buildings, livePositions, user.id, 0.35)) {
             user.position = { ...user.position, x: nx, z: nz };
             user.movementState = 'walking';
+            livePositions.set(user.id, { x: nx, z: nz });
             changed = true;
           } else {
-            // Blocked — pick a new target next tick
-            user._targetX = undefined;
-            user._targetZ = undefined;
-            user.movementState = 'idle';
-            changed = true;
+            // Try perpendicular deflection (slide along obstacle)
+            const perpNx = user.position.x + dirZ * step * 0.7;
+            const perpNz = user.position.z - dirX * step * 0.7;
+            if (!isPositionBlockedForNPC(perpNx, perpNz, buildings, livePositions, user.id, 0.35)) {
+              user.position = { ...user.position, x: perpNx, z: perpNz };
+              user.movementState = 'walking';
+              livePositions.set(user.id, { x: perpNx, z: perpNz });
+              changed = true;
+            } else {
+              // Fully blocked — abandon target, pick new one next tick
+              user._targetX = undefined;
+              user._targetZ = undefined;
+              user.movementState = 'idle';
+              user._waitUntil = now + 300 + Math.random() * 700;
+              changed = true;
+            }
           }
         } else {
           // Arrived
           user.position = { ...user.position, x: user._targetX, z: user._targetZ };
+          livePositions.set(user.id, { x: user._targetX, z: user._targetZ });
           user._targetX = undefined;
           user._targetZ = undefined;
           user.movementState = 'idle';
@@ -1050,10 +1097,7 @@ export const useStore = create<CityStore>((set, get) => ({
 }));
 
 function isValidPosition(pos: { x: number; z: number }, buildings: Building[], isCore: boolean, gridSize: number) {
-  // Castle needs 2 rows clearance each side (5 base + 2 buffer = 7), skyscraper needs 1 row (2)
   const reqSize = isCore ? 7 : 2; 
-  
-  // Grid bounds check
   const halfReqSize = Math.floor(reqSize / 2);
   if (pos.x - halfReqSize < 0 || pos.x + halfReqSize >= gridSize) return false;
   if (pos.z - halfReqSize < 0 || pos.z + halfReqSize >= gridSize) return false;
@@ -1073,7 +1117,6 @@ function findValidPosition(buildings: Building[], gridSize: number, isCore: bool
       positions.push({ x, z, dist });
     }
   }
-  
   positions.sort((a, b) => a.dist - b.dist);
 
   for (const pos of positions) {
@@ -1091,29 +1134,36 @@ function findNPCSpawnPosition(
   npcUsers: CityUser[],
   gridSize: number
 ): { x: number; z: number } | null {
-  // Try random positions up to 50 times
+  const livePositions: Map<string, { x: number; z: number }> = new Map();
+  for (const u of npcUsers) {
+    livePositions.set(u.id, { x: u.position.x, z: u.position.z });
+  }
   for (let i = 0; i < 50; i++) {
     const x = 0.5 + Math.random() * (gridSize - 1);
     const z = 0.5 + Math.random() * (gridSize - 1);
-    if (!isPositionBlockedForNPC(x, z, buildings, npcUsers, '')) {
+    if (!isPositionBlockedForNPC(x, z, buildings, livePositions, '', 0.5)) {
       return { x, z };
     }
   }
-  // Fallback: grid center
   return { x: gridSize / 2, z: gridSize / 2 };
 }
 
+/**
+ * Check if a position is blocked by buildings or other NPCs.
+ * @param buffer Extra clearance from building edges
+ */
 function isPositionBlockedForNPC(
   x: number,
   z: number,
   buildings: Building[],
-  npcUsers: CityUser[],
-  selfId: string
+  livePositions: Map<string, { x: number; z: number }>,
+  selfId: string,
+  buffer: number
 ): boolean {
-  // Check building collision (buildings occupy a footprint around their position)
+  // Building collision (footprint + buffer)
   for (const b of buildings) {
-    const footprint = b.isCore ? 5 : 2;
-    const half = footprint / 2;
+    const footprint = b.isCore ? 5 : 1;
+    const half = footprint / 2 + buffer;
     if (
       x >= b.position.x - half && x <= b.position.x + half &&
       z >= b.position.z - half && z <= b.position.z + half
@@ -1122,15 +1172,50 @@ function isPositionBlockedForNPC(
     }
   }
 
-  // Check other NPC collision (minimum distance of 0.4 units)
-  for (const u of npcUsers) {
-    if (u.id === selfId) continue;
-    const dx = x - u.position.x;
-    const dz = z - u.position.z;
-    if (Math.sqrt(dx * dx + dz * dz) < 0.4) {
+  // NPC collision (minimum separation 0.4 units)
+  for (const [id, pos] of livePositions) {
+    if (id === selfId) continue;
+    const dx = x - pos.x;
+    const dz = z - pos.z;
+    if (dx * dx + dz * dz < 0.16) { // 0.4^2
       return true;
     }
   }
 
   return false;
 }
+
+/**
+ * Check if the straight-line path between two points is clear of buildings.
+ * Samples intermediate points along the path.
+ */
+function isPathClear(
+  fromX: number, fromZ: number,
+  toX: number, toZ: number,
+  buildings: Building[],
+  buffer: number
+): boolean {
+  const dx = toX - fromX;
+  const dz = toZ - fromZ;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  const steps = Math.max(2, Math.ceil(dist / 0.3));
+
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const sx = fromX + dx * t;
+    const sz = fromZ + dz * t;
+
+    for (const b of buildings) {
+      const footprint = b.isCore ? 5 : 1;
+      const half = footprint / 2 + buffer;
+      if (
+        sx >= b.position.x - half && sx <= b.position.x + half &&
+        sz >= b.position.z - half && sz <= b.position.z + half
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
