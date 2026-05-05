@@ -1,11 +1,11 @@
 import { supabase } from './supabase';
 
-/** Triggers Google OAuth → callback exchanges code → lands on /city */
+/** Triggers Google OAuth → lands on /city (implicit flow, hash fragment) */
 export async function loginWithGoogle() {
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
   // Preserve invite_token through OAuth flow
-  let redirectUrl = `${origin}/auth/callback`;
+  let redirectUrl = `${origin}/city`;
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search);
     const inviteToken = params.get('invite_token');
