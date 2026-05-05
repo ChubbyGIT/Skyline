@@ -219,9 +219,19 @@ export const useStore = create<CityStore>((set, get) => ({
 
   fetchMemories: async () => {
     set({ isLoading: true });
+
+    // Get the current user's session to scope the query
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.error('No active session — cannot fetch memories');
+      set({ isLoading: false });
+      return;
+    }
+
     const { data, error } = await supabase
       .from('memories')
       .select('*')
+      .eq('user_id', session.user.id)
       .order('created_at', { ascending: true });
 
     if (error) {
@@ -887,9 +897,17 @@ export const useStore = create<CityStore>((set, get) => ({
   /* ─── NPC User actions ─── */
 
   fetchNPCUsers: async () => {
+    // Get the current user's session to scope the query
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.error('No active session — cannot fetch NPC users');
+      return;
+    }
+
     const { data, error } = await supabase
       .from('city_users')
       .select('*')
+      .eq('owner_id', session.user.id)
       .order('created_at', { ascending: true });
 
     if (error) {
