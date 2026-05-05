@@ -1,6 +1,6 @@
 "use client";
-import { useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useStore } from "@/store/useStore";
 import dynamic from "next/dynamic";
@@ -21,34 +21,40 @@ const BackgroundMusic = dynamic(
   { ssr: false, loading: () => null }
 );
 
-export default function CityPage() {
-  const router = useRouter();
+/** Handles invite token from URL — must be inside Suspense */
+function InviteHandler() {
   const searchParams = useSearchParams();
   const processInviteToken = useStore(s => s.processInviteToken);
 
   useEffect(() => {
-    const checkUser = async () => {
+    const handle = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         window.location.href = '/';
         return;
       }
 
-      // Process invite token if present (auto-connect friend after signup)
       const inviteToken = searchParams.get('invite_token');
       if (inviteToken) {
         await processInviteToken(inviteToken);
-        // Clean up URL — remove the token query param
         const url = new URL(window.location.href);
         url.searchParams.delete('invite_token');
         window.history.replaceState({}, '', url.pathname);
       }
     };
-    checkUser();
+    handle();
   }, []);
 
+  return null;
+}
+
+export default function CityPage() {
   return (
     <>
+      <Suspense fallback={null}>
+        <InviteHandler />
+      </Suspense>
+
       {/* Scene owns its own fixed positioning — no wrapper needed */}
       <Scene />
 
@@ -68,3 +74,4 @@ export default function CityPage() {
     </>
   );
 }
+
