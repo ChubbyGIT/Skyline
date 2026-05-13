@@ -701,15 +701,25 @@ export const useStore = create<CityStore>((set, get) => ({
       return;
     }
 
-    // Send notification email (fire-and-forget — don't block the UI)
-    fetch('/api/friend-request-notify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sender_id: session.user.id,
-        receiver_id: toUserId,
-      }),
-    }).catch((err) => console.error('Friend request notification failed:', err));
+    // Send notification email (non-blocking — log errors but don't fail the request)
+    try {
+      const notifyRes = await fetch('/api/friend-request-notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sender_id: session.user.id,
+          receiver_id: toUserId,
+        }),
+      });
+      const notifyData = await notifyRes.json();
+      if (!notifyRes.ok) {
+        console.error('Friend request notification failed:', notifyData);
+      } else {
+        console.log('Friend request notification sent:', notifyData);
+      }
+    } catch (err) {
+      console.error('Friend request notification error:', err);
+    }
 
     await get().fetchFriendRequests();
   },

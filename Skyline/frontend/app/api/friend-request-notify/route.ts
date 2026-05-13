@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { Resend } from 'resend';
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { sendEmail } from '@/lib/mailer';
 
 /**
  * POST /api/friend-request-notify
@@ -53,26 +51,21 @@ export async function POST(request: NextRequest) {
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://skyline-gw5n.vercel.app';
 
-    // Send email via Resend
+    // Send email via Gmail SMTP
     try {
-      const { error: emailError } = await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || 'Skyline <onboarding@resend.dev>',
+      console.log(`Sending friend request email to: ${receiverProfile.email}, from sender: ${senderName}`);
+
+      await sendEmail({
         to: receiverProfile.email,
         subject: `${senderName} sent you a friend request on Skyline`,
         html: buildFriendRequestEmail(senderName, appUrl),
       });
 
-      if (emailError) {
-        console.error('Resend email error:', emailError);
-        return NextResponse.json(
-          { error: 'Failed to send notification email' },
-          { status: 500 }
-        );
-      }
+      console.log('Friend request notification email sent successfully');
     } catch (emailErr) {
       console.error('Email sending failed:', emailErr);
       return NextResponse.json(
-        { error: 'Email service error' },
+        { error: 'Email service error', details: String(emailErr) },
         { status: 500 }
       );
     }

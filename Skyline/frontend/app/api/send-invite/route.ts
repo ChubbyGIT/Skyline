@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { Resend } from 'resend';
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { sendEmail } from '@/lib/mailer';
 
 /**
  * POST /api/send-invite
@@ -111,21 +109,17 @@ export async function POST(request: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://skyline-gw5n.vercel.app';
     const inviteUrl = `${appUrl}?invite_token=${invite.token}`;
 
-    // ── Send email via Resend ──
+    // ── Send email via Gmail SMTP ──
     try {
       const senderEmail = (await supabase.from('profiles').select('email').eq('id', sender_id).single()).data?.email || '';
 
-      const { error: emailError } = await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || 'Skyline <onboarding@resend.dev>',
+      await sendEmail({
         to: normalizedEmail,
         subject: "You're invited to Skyline 🌆",
         html: buildInviteEmail(senderEmail, inviteUrl),
       });
 
-      if (emailError) {
-        console.error('Resend email error:', emailError);
-        // Don't fail the invite — it's stored in DB even if email fails
-      }
+      console.log('Invite email sent to:', normalizedEmail);
     } catch (emailErr) {
       console.error('Email sending failed:', emailErr);
       // Invite is still valid in DB — user can share the link manually
