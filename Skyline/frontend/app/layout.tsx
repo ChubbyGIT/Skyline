@@ -4,7 +4,13 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Skyline — Your Life, Built in 3D',
   description: 'A spatial diary for the modern mind. Transform your memories into a living 3D cityscape.',
-  icons: { icon: '/skyline-logo.png', apple: '/skyline-logo.png' },
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '48x48' },
+      { url: '/skyline-logo.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
   openGraph: {
     title: 'Skyline — Your Life, Built in 3D',
     description: 'A spatial diary for the modern mind.',
