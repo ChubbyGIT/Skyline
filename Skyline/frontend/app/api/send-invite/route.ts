@@ -61,21 +61,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── Check for duplicate pending invite ──
-    const { data: existingInvite } = await supabase
+    // ── Remove any existing pending invite (allow re-sending) ──
+    await supabase
       .from('invitations')
-      .select('id')
+      .delete()
       .eq('inviter_id', sender_id)
       .eq('invitee_email', normalizedEmail)
-      .eq('status', 'pending')
-      .maybeSingle();
-
-    if (existingInvite) {
-      return NextResponse.json(
-        { error: 'An invite to this email is already pending.' },
-        { status: 409 }
-      );
-    }
+      .eq('status', 'pending');
 
     // ── Get sender's display name ──
     const { data: senderProfile } = await supabase
