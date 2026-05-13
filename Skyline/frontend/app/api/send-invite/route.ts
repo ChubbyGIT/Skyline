@@ -9,7 +9,7 @@ import { sendEmail } from '@/lib/mailer';
  * 1. Validates rate limit (max 5 invites/day)
  * 2. Checks for duplicate pending invites
  * 3. Inserts invite with unique token
- * 4. Sends email via Resend
+ * 4. Sends email via Gmail SMTP
  */
 export async function POST(request: NextRequest) {
   try {
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     // ── Get sender's display name ──
     const { data: senderProfile } = await supabase
       .from('profiles')
-      .select('display_name, username')
+      .select('display_name, username, email')
       .eq('id', sender_id)
       .single();
 
@@ -111,15 +111,15 @@ export async function POST(request: NextRequest) {
 
     // ── Send email via Gmail SMTP ──
     try {
-      const senderEmail = (await supabase.from('profiles').select('email').eq('id', sender_id).single()).data?.email || '';
+      console.log(`Sending invite email to: ${normalizedEmail}, from sender: ${senderName}`);
 
       await sendEmail({
         to: normalizedEmail,
-        subject: "You're invited to Skyline 🌆",
-        html: buildInviteEmail(senderEmail, inviteUrl),
+        subject: `${senderName} invited you to Skyline 🌆`,
+        html: buildInviteEmail(senderName, inviteUrl),
       });
 
-      console.log('Invite email sent to:', normalizedEmail);
+      console.log('Invite email sent successfully to:', normalizedEmail);
     } catch (emailErr) {
       console.error('Email sending failed:', emailErr);
       // Invite is still valid in DB — user can share the link manually
@@ -141,9 +141,9 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Beautiful HTML email template for the invite.
+ * Branded HTML email template for the invite.
  */
-function buildInviteEmail(senderEmail: string, inviteUrl: string): string {
+function buildInviteEmail(senderName: string, inviteUrl: string): string {
   return `
 <!DOCTYPE html>
 <html>
@@ -153,15 +153,38 @@ function buildInviteEmail(senderEmail: string, inviteUrl: string): string {
 </head>
 <body style="margin:0;padding:0;background:#0a0a0a;font-family:'Segoe UI',Roboto,sans-serif;">
   <div style="max-width:520px;margin:40px auto;background:linear-gradient(145deg,#06281e,#0d3b2e);border-radius:24px;border:1px solid rgba(52,211,153,0.2);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.6);">
-    <div style="padding:36px 32px;">
-      <p style="font-size:16px;color:#d1fae5;line-height:1.8;margin:0 0 20px;">Hi,</p>
+    <!-- Header -->
+    <div style="padding:32px 32px 0;text-align:center;">
+      <div style="font-size:28px;font-weight:700;color:#d1fae5;letter-spacing:-0.5px;">
+        🌆 Skyline
+      </div>
+      <div style="margin-top:6px;font-size:12px;color:#6ee7b7;letter-spacing:2px;text-transform:uppercase;">
+        You're Invited
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div style="padding:28px 32px 36px;">
+      <p style="font-size:16px;color:#d1fae5;line-height:1.8;margin:0 0 20px;">Hi there,</p>
       <p style="font-size:16px;color:#d1fae5;line-height:1.8;margin:0 0 24px;">
-        You have been invited to try <strong style="color:#34d399;">Skyline</strong>, a 3D spatial diary by <strong style="color:#34d399;">${senderEmail}</strong>
+        <strong style="color:#34d399;">${senderName}</strong> has invited you to join <strong style="color:#34d399;">Skyline</strong> — a 3D spatial diary where your memories become a living cityscape. Sign up to connect and start building your own city!
       </p>
-      <p style="font-size:16px;color:#d1fae5;line-height:1.8;margin:0 0 8px;">Try it out here:</p>
-      <p style="margin:0 0 8px;"><a href="${inviteUrl}" style="color:#34d399;font-size:15px;word-break:break-all;">${inviteUrl}</a></p>
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${inviteUrl}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#34d399,#10b981);color:#fff;font-size:14px;font-weight:700;text-decoration:none;border-radius:999px;letter-spacing:0.5px;box-shadow:0 8px 25px rgba(16,185,129,0.4);">
+          Join Skyline
+        </a>
+      </div>
+      <p style="font-size:13px;color:#6ee7b780;line-height:1.6;margin:0;text-align:center;">
+        If you didn't expect this invite, you can safely ignore this email.
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <div style="padding:16px 32px;border-top:1px solid rgba(52,211,153,0.1);text-align:center;">
+      <span style="font-size:11px;color:#6ee7b750;">Skyline — Your Life, Built in 3D</span>
     </div>
   </div>
 </body>
 </html>`;
 }
+
