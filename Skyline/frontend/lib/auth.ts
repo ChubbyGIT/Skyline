@@ -16,7 +16,13 @@ export async function loginWithGoogle() {
 
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: redirectUrl },
+    options: {
+      redirectTo: redirectUrl,
+      queryParams: {
+        prompt: 'consent',
+        access_type: 'offline',
+      },
+    },
   });
   if (error) console.error('OAuth error:', error.message);
 }

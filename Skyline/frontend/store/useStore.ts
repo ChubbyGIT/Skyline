@@ -700,6 +700,17 @@ export const useStore = create<CityStore>((set, get) => ({
       console.error('Error sending friend request:', error.message);
       return;
     }
+
+    // Send notification email (fire-and-forget — don't block the UI)
+    fetch('/api/friend-request-notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sender_id: session.user.id,
+        receiver_id: toUserId,
+      }),
+    }).catch((err) => console.error('Friend request notification failed:', err));
+
     await get().fetchFriendRequests();
   },
 
