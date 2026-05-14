@@ -31,6 +31,7 @@ const SceneLighting: React.FC<{ theme: 'day' | 'night' }> = ({ theme }) => (
 
 export const Scene: React.FC = () => {
   const theme = useStore((state) => state.theme);
+  const selectNPC = useStore((state) => state.selectNPC);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
@@ -53,6 +54,7 @@ export const Scene: React.FC = () => {
         camera={{ position: [15, 15, 15], fov: 45 }}
         gl={{ antialias: true }}
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+        onPointerMissed={() => selectNPC(null)}
         onCreated={({ scene, gl }) => {
           scene.background = new THREE.Color(bg);
           scene.fog = new THREE.Fog(bg, 20, theme === 'day' ? 100 : 80);

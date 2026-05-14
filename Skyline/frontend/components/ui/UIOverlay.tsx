@@ -917,8 +917,7 @@ export const UIOverlay: React.FC = () => {
                             )}
 
                             {/* Footer */}
-                            <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end' }}>
-                                <span style={{ fontSize: '9px', color: '#6ee7b760', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1.5px' }}>Skyline Engine V1.3</span>
+                            <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                             </div>
                         </div>
                     )}

@@ -199,11 +199,66 @@ export const PersonNPC: React.FC<PersonNPCProps> = ({ data }) => {
         <meshStandardMaterial color={skinColor} roughness={0.5} />
       </mesh>
 
-      {/* ── Hair ── */}
-      <mesh position={[0, legH + bodyH + headR * 1.75 + 0.05, 0]} castShadow>
-        <sphereGeometry args={[headR * 0.85, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
-        <meshStandardMaterial color={hairColor} roughness={0.8} />
-      </mesh>
+      {/* ── Hair (gender-specific) ── */}
+      {data.gender === 'male' ? (
+        /* Short male hair — blocky top + slight sides */
+        <group position={[0, legH + bodyH + headR + 0.05, 0]}>
+          {/* Top hair block */}
+          <mesh position={[0, headR * 0.82, 0]} castShadow>
+            <boxGeometry args={[headR * 1.7, headR * 0.45, headR * 1.7]} />
+            <meshStandardMaterial color={hairColor} roughness={0.8} />
+          </mesh>
+          {/* Front fringe */}
+          <mesh position={[0, headR * 0.65, headR * 0.72]} castShadow>
+            <boxGeometry args={[headR * 1.5, headR * 0.3, headR * 0.35]} />
+            <meshStandardMaterial color={hairColor} roughness={0.8} />
+          </mesh>
+          {/* Left side */}
+          <mesh position={[-headR * 0.82, headR * 0.45, 0]} castShadow>
+            <boxGeometry args={[headR * 0.25, headR * 0.55, headR * 1.4]} />
+            <meshStandardMaterial color={hairColor} roughness={0.8} />
+          </mesh>
+          {/* Right side */}
+          <mesh position={[headR * 0.82, headR * 0.45, 0]} castShadow>
+            <boxGeometry args={[headR * 0.25, headR * 0.55, headR * 1.4]} />
+            <meshStandardMaterial color={hairColor} roughness={0.8} />
+          </mesh>
+          {/* Back */}
+          <mesh position={[0, headR * 0.5, -headR * 0.72]} castShadow>
+            <boxGeometry args={[headR * 1.5, headR * 0.5, headR * 0.3]} />
+            <meshStandardMaterial color={hairColor} roughness={0.8} />
+          </mesh>
+        </group>
+      ) : (
+        /* Long female hair — top cap + flowing back */
+        <group position={[0, legH + bodyH + headR + 0.05, 0]}>
+          {/* Hair cap on top */}
+          <mesh position={[0, headR * 0.78, 0]} castShadow>
+            <sphereGeometry args={[headR * 1.05, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
+            <meshStandardMaterial color={hairColor} roughness={0.75} />
+          </mesh>
+          {/* Left long strand */}
+          <mesh position={[-headR * 0.7, -headR * 0.3, -headR * 0.15]} castShadow>
+            <boxGeometry args={[headR * 0.35, headR * 2.4, headR * 0.3]} />
+            <meshStandardMaterial color={hairColor} roughness={0.75} />
+          </mesh>
+          {/* Right long strand */}
+          <mesh position={[headR * 0.7, -headR * 0.3, -headR * 0.15]} castShadow>
+            <boxGeometry args={[headR * 0.35, headR * 2.4, headR * 0.3]} />
+            <meshStandardMaterial color={hairColor} roughness={0.75} />
+          </mesh>
+          {/* Back hair (long, flowing down) */}
+          <mesh position={[0, -headR * 0.55, -headR * 0.65]} castShadow>
+            <boxGeometry args={[headR * 1.5, headR * 2.8, headR * 0.3]} />
+            <meshStandardMaterial color={hairColor} roughness={0.75} />
+          </mesh>
+          {/* Front bangs */}
+          <mesh position={[0, headR * 0.55, headR * 0.78]} castShadow>
+            <boxGeometry args={[headR * 1.3, headR * 0.35, headR * 0.25]} />
+            <meshStandardMaterial color={hairColor} roughness={0.75} />
+          </mesh>
+        </group>
+      )}
 
       {/* ── Eyes ── */}
       <group position={[0, legH + bodyH + headR + 0.05, headR * 0.85]}>
@@ -253,15 +308,18 @@ export const PersonNPC: React.FC<PersonNPCProps> = ({ data }) => {
         </div>
       </Html>
 
-      {/* ── Hover Popup (details on hover / click) ── */}
-      {(hovered || isSelected) && (
+      {/* ── Popup (details on click only — persists until click-outside) ── */}
+      {isSelected && (
         <Html
           position={[0, totalH + 0.35, 0]}
           center
           distanceFactor={10}
           style={{ pointerEvents: isSelected ? 'auto' : 'none' }}
         >
-          <div style={{
+          <div
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{
             background: 'rgba(6, 40, 30, 0.92)',
             backdropFilter: 'blur(16px)',
             border: `1px solid ${shirtColor}40`,
@@ -360,10 +418,7 @@ export const PersonNPC: React.FC<PersonNPCProps> = ({ data }) => {
               </div>
             )}
 
-            {/* Tip text when hovering but not selected */}
-            {!isSelected && (
-              <div style={{ fontSize: '9px', color: '#6ee7b760', marginTop: '4px', textAlign: 'center' }}>Click to interact</div>
-            )}
+
           </div>
         </Html>
       )}

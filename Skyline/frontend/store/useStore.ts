@@ -181,6 +181,7 @@ interface CityActions {
   setViewMode: (active: boolean, userId?: string, userName?: string) => void;
   // NPC User actions
   fetchNPCUsers: () => Promise<void>;
+  fetchPublicNPCUsers: (userId: string) => Promise<void>;
   addNPCUser: (input: { name: string; description: string; gender: 'male' | 'female' }) => Promise<void>;
   removeNPCUser: (id: string) => Promise<void>;
   updateNPCColor: (id: string, color: string) => Promise<void>;
@@ -933,6 +934,35 @@ export const useStore = create<CityStore>((set, get) => ({
 
     if (error) {
       console.error('Error fetching NPC users:', error.message);
+      return;
+    }
+
+    const users: CityUser[] = (data || []).map((u: any) => ({
+      id: u.id,
+      ownerId: u.owner_id,
+      name: u.name,
+      description: u.description || '',
+      gender: u.gender as 'male' | 'female',
+      color: u.color,
+      position: { x: u.pos_x, y: u.pos_y || 0, z: u.pos_z },
+      movementState: 'idle' as const,
+      _targetX: u.pos_x,
+      _targetZ: u.pos_z,
+      _waitUntil: 0,
+    }));
+
+    set({ npcUsers: users });
+  },
+
+  fetchPublicNPCUsers: async (userId: string) => {
+    const { data, error } = await supabase
+      .from('city_users')
+      .select('*')
+      .eq('owner_id', userId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching public NPC users:', error.message);
       return;
     }
 

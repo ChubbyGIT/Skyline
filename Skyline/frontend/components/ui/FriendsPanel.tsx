@@ -34,18 +34,35 @@ const FriendModal: React.FC<{ friend: FriendProfile; onClose: () => void }> = ({
           display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
         }}><X size={14} /></button>
 
-        {/* Avatar */}
-        <div style={{
-          width: 64, height: 64, borderRadius: '50%', margin: '0 auto 16px',
-          background: 'linear-gradient(135deg, #34d399, #10b981)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 28, fontWeight: 700, color: 'white',
-          boxShadow: '0 0 20px rgba(52,211,153,0.4)',
-        }}>{(friend.displayName || friend.username || '?')[0].toUpperCase()}</div>
+        {/* Avatar — OAuth picture or gradient fallback */}
+        {friend.avatarUrl ? (
+          <img
+            src={friend.avatarUrl}
+            alt={friend.displayName || friend.username || ''}
+            style={{
+              width: 72, height: 72, borderRadius: '50%', margin: '0 auto 16px',
+              objectFit: 'cover', display: 'block',
+              border: '3px solid rgba(52,211,153,0.4)',
+              boxShadow: '0 0 20px rgba(52,211,153,0.4)',
+            }}
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <div style={{
+            width: 72, height: 72, borderRadius: '50%', margin: '0 auto 16px',
+            background: 'linear-gradient(135deg, #34d399, #10b981)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 30, fontWeight: 700, color: 'white',
+            boxShadow: '0 0 20px rgba(52,211,153,0.4)',
+          }}>{(friend.displayName || friend.username || '?')[0].toUpperCase()}</div>
+        )}
 
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <div style={{ fontSize: 20, fontWeight: 700, color: '#d1fae5' }}>{friend.displayName || friend.username}</div>
           <div style={{ fontSize: 11, color: '#6ee7b780', marginTop: 2 }}>@{friend.username}</div>
+          {friend.email && (
+            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{friend.email}</div>
+          )}
         </div>
 
         {/* Stats */}
@@ -342,27 +359,53 @@ export const FriendsPanel: React.FC = () => {
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }} className="scrollbar-hide">
         {(friends || []).map((f: FriendProfile) => (
           <div key={f.id} onClick={() => setSelectedFriend(f)} style={{
-            ...glass, display: 'flex', alignItems: 'center', padding: '12px 14px',
-            cursor: 'pointer', transition: 'all 0.2s',
+            ...glass, display: 'flex', alignItems: 'center', padding: '14px 14px',
+            cursor: 'pointer', transition: 'all 0.2s', gap: 12,
           }}
             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.transform = 'translateX(4px)'; }}
             onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.transform = 'translateX(0)'; }}
           >
-            <div style={{
-              width: 36, height: 36, borderRadius: '50%', marginRight: 12, flexShrink: 0,
-              background: 'linear-gradient(135deg, #34d399, #10b981)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 15, fontWeight: 700, color: 'white',
-              boxShadow: '0 0 10px rgba(52,211,153,0.3)',
-            }}>{(f.displayName || f.username || '?')[0].toUpperCase()}</div>
-            <div style={{ overflow: 'hidden', flex: 1 }}>
+            {/* OAuth Profile Picture or Gradient Fallback */}
+            {f.avatarUrl ? (
+              <img
+                src={f.avatarUrl}
+                alt={f.displayName || f.username || ''}
+                style={{
+                  width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+                  objectFit: 'cover',
+                  border: '2px solid rgba(52,211,153,0.4)',
+                  boxShadow: '0 0 10px rgba(52,211,153,0.25)',
+                }}
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+                background: 'linear-gradient(135deg, #34d399, #10b981)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 16, fontWeight: 700, color: 'white',
+                boxShadow: '0 0 10px rgba(52,211,153,0.3)',
+              }}>{(f.displayName || f.username || '?')[0].toUpperCase()}</div>
+            )}
+
+            {/* Name, Email, Building Count */}
+            <div style={{ overflow: 'hidden', flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#d1fae5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {f.displayName || f.username}
               </div>
-              <div style={{ fontSize: 10, color: '#6ee7b780', marginTop: 2 }}>
-                {f.buildingCount ?? 0} buildings
+              <div style={{ fontSize: 10, color: '#6ee7b780', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {f.email || '—'}
+              </div>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4,
+                padding: '2px 8px', borderRadius: 10,
+                background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)',
+                fontSize: 9, fontWeight: 600, color: '#34d399',
+              }}>
+                🏙️ {f.buildingCount ?? 0} buildings
               </div>
             </div>
+
             {/* Activity dot */}
             <div style={{
               width: 6, height: 6, borderRadius: '50%', flexShrink: 0,

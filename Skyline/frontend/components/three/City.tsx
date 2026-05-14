@@ -24,6 +24,7 @@ export const City: React.FC = () => {
   const memories = useStore(s => s.memories);
   const npcUsers = useStore(s => s.npcUsers);
   const tickNPCMovement = useStore(s => s.tickNPCMovement);
+  const selectNPC = useStore(s => s.selectNPC);
 
   // Tick NPC movement each frame
   useFrame((_, delta) => {
@@ -106,8 +107,11 @@ export const City: React.FC = () => {
   const handleTileClick = useCallback((x: number, z: number) => {
     if (isRepositioning && repositioningBuildingId) {
       setPreviewPosition({ x, z });
+    } else {
+      // Deselect NPC when clicking on ground tiles (click-outside-to-close)
+      selectNPC(null);
     }
-  }, [isRepositioning, repositioningBuildingId, setPreviewPosition]);
+  }, [isRepositioning, repositioningBuildingId, setPreviewPosition, selectNPC]);
 
   // Handle pointer down on ground to start drag
   const handlePointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {

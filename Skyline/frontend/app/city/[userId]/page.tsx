@@ -20,7 +20,7 @@ export default function FriendCityPage() {
   const userId = params?.userId as string;
   const [friendName, setFriendName] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const { fetchPublicCity, setViewMode } = useStore();
+  const { fetchPublicCity, fetchPublicNPCUsers, setViewMode } = useStore();
 
   useEffect(() => {
     if (!userId) return;
@@ -40,8 +40,9 @@ export default function FriendCityPage() {
       // Set view mode (read-only)
       setViewMode(true, userId, profile?.display_name || profile?.username || 'Friend');
 
-      // Fetch their city data
+      // Fetch their city data and NPCs
       await fetchPublicCity(userId);
+      await fetchPublicNPCUsers(userId);
       setLoading(false);
     };
 
