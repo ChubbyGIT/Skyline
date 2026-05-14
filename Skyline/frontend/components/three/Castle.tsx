@@ -46,7 +46,7 @@ const CornerTower = ({ pos, H, R, stone, stoneDark, catColor, theme, hovered }: 
       {/* ━━ Main shaft ━━ */}
       <mesh position={[0, H / 2 + 0.38, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[R, R * 1.06, H, segs]} />
-        <Stone color={stone} emissive={isDark ? catColor : '#000'} emissiveIntensity={isDark ? 0.07 : 0} />
+        <Stone color={stone} emissive={catColor} emissiveIntensity={isDark ? 0.07 : 0.05} />
       </mesh>
 
       {/* ━━ Decorative string courses ━━ */}
@@ -353,7 +353,7 @@ const Keep = ({ H, W, stone, stoneDark, catColor, theme, hovered }: any) => {
       {/* Keep body */}
       <mesh position={[0, H / 2, 0]} castShadow receiveShadow>
         <boxGeometry args={[W, H, W]} />
-        <Stone color={stone} emissive={isDark ? catColor : '#000'} emissiveIntensity={isDark ? 0.12 : 0} />
+        <Stone color={stone} emissive={catColor} emissiveIntensity={isDark ? 0.12 : 0.07} />
       </mesh>
 
       {/* Vertical pilasters (corner buttresses) */}

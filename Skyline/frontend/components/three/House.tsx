@@ -256,8 +256,8 @@ export const House: React.FC<HouseProps> = ({ data, readOnly }) => {
           color={wallColor}
           roughness={0.82}
           metalness={0.04}
-          emissive={isDark ? accentColor : (isSelected ? '#ffffff' : '#000000')}
-          emissiveIntensity={isDark ? 0.08 : (isSelected ? 0.15 : 0)}
+          emissive={isDark ? accentColor : (isSelected ? '#ffffff' : accentColor)}
+          emissiveIntensity={isDark ? 0.08 : (isSelected ? 0.15 : 0.06)}
         />
       </mesh>
 
@@ -361,8 +361,8 @@ export const House: React.FC<HouseProps> = ({ data, readOnly }) => {
             color={roofColor}
             roughness={0.7}
             metalness={0.12}
-            emissive={isDark ? accentColor : '#000000'}
-            emissiveIntensity={isDark ? 0.05 : 0}
+            emissive={accentColor}
+            emissiveIntensity={isDark ? 0.05 : 0.03}
           />
         </mesh>
 

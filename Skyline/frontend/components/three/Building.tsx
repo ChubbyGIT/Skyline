@@ -172,8 +172,8 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
       color: facadeColor,
       metalness: 0.45 + (seed % 3) * 0.08,
       roughness: 0.12 + (seed % 4) * 0.04,
-      emissive: theme === 'night' ? data.color : (isSelected ? '#ffffff' : '#000000'),
-      emissiveIntensity: theme === 'night' ? 0.25 : (isSelected ? 0.25 : 0),
+      emissive: theme === 'night' ? data.color : (isSelected ? '#ffffff' : data.color),
+      emissiveIntensity: theme === 'night' ? 0.25 : (isSelected ? 0.25 : 0.15),
       clearcoat: 0.7,
     };
   }, [facadeColor, seed, theme, data.color, isSelected, hovered]);
@@ -329,8 +329,8 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
             color={crownColor}
             metalness={0.5}
             roughness={0.2}
-            emissive={theme === 'night' ? data.color : '#000000'}
-            emissiveIntensity={theme === 'night' ? 0.4 : 0}
+            emissive={data.color}
+            emissiveIntensity={theme === 'night' ? 0.4 : 0.2}
             clearcoat={0.5}
           />
         </mesh>
