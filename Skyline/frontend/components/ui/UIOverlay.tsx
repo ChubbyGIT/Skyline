@@ -4,8 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore, MemoryCategory, FriendProfile, FriendRequest as FriendRequestType, CityUser } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
-import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock, HelpCircle, Users, Search, UserPlus, Mail, ExternalLink, Check, XCircle, Palette, UserRound } from 'lucide-react';
-import { CATEGORY_COLORS } from '@/store/useStore';
+import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock, HelpCircle, Users, Search, UserPlus, Mail, ExternalLink, Check, XCircle, Palette, UserRound, Sun, Moon, Edit3, RotateCcw } from 'lucide-react';
+import { CATEGORY_COLORS, getCategoryColor } from '@/store/useStore';
 import { FriendsPanel } from './FriendsPanel';
 
 export const UIOverlay: React.FC = () => {
@@ -60,6 +60,11 @@ export const UIOverlay: React.FC = () => {
         updateNPCColor,
         selectNPC,
         setUserModalOpen,
+        // Theme & Custom Colors
+        toggleTheme,
+        customCategoryColors,
+        setCustomCategoryColor,
+        resetCustomCategoryColors,
     } = useStore() as any;
 
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -102,6 +107,7 @@ export const UIOverlay: React.FC = () => {
     });
     const [isGenderDropdownOpen, setIsGenderDropdownOpen] = useState(false);
     const [npcColorPickerValue, setNpcColorPickerValue] = useState('#3498db');
+    const [isColorEditOpen, setIsColorEditOpen] = useState(false);
 
     useEffect(() => {
         if (isModalOpen && !draftId) {
@@ -463,6 +469,209 @@ export const UIOverlay: React.FC = () => {
                 >
                     <LogOut size={16} />
                 </button>
+            </div>
+
+            {/* ─── TOP-RIGHT: Day Mode Toggle + Edit Button ─── */}
+            <div
+                className="pointer-events-auto"
+                style={{
+                    position: 'fixed',
+                    top: '20px',
+                    right: '24px',
+                    zIndex: 998,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    alignItems: 'flex-end',
+                }}
+            >
+                {/* Day/Night Toggle */}
+                <button
+                    onClick={() => toggleTheme()}
+                    title={theme === 'night' ? 'Switch to Day Mode' : 'Switch to Night Mode'}
+                    style={{
+                        ...glassCard,
+                        width: '44px',
+                        height: '44px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease',
+                        color: theme === 'day' ? '#f59e0b' : '#6ee7b7',
+                        border: theme === 'day' ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(255,255,255,0.08)',
+                        background: theme === 'day' ? 'rgba(245,158,11,0.08)' : 'rgba(255,255,255,0.05)',
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'scale(1.1)';
+                        e.currentTarget.style.boxShadow = theme === 'day'
+                            ? '0 0 20px rgba(245,158,11,0.4)'
+                            : '0 0 20px rgba(110,231,183,0.4)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.4)';
+                    }}
+                >
+                    {theme === 'day' ? <Sun size={18} /> : <Moon size={18} />}
+                </button>
+
+                {/* Edit Colors Button */}
+                <button
+                    onClick={() => setIsColorEditOpen(!isColorEditOpen)}
+                    title="Customize Building Colors"
+                    style={{
+                        ...glassCard,
+                        width: '44px',
+                        height: '44px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease',
+                        color: isColorEditOpen ? '#a78bfa' : '#6ee7b7aa',
+                        border: isColorEditOpen ? '1px solid rgba(167,139,250,0.3)' : '1px solid rgba(255,255,255,0.08)',
+                        background: isColorEditOpen ? 'rgba(167,139,250,0.08)' : 'rgba(255,255,255,0.05)',
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'scale(1.1)';
+                        e.currentTarget.style.boxShadow = '0 0 20px rgba(167,139,250,0.4)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.4)';
+                    }}
+                >
+                    <Edit3 size={16} />
+                </button>
+
+                {/* ── Color Customization Panel ── */}
+                {isColorEditOpen && (
+                    <div style={{
+                        ...glassCard,
+                        width: '280px',
+                        padding: '20px',
+                        fontFamily: "'Inter', system-ui, sans-serif",
+                        animation: 'colorPanelIn 0.25s cubic-bezier(.16,1,.3,1)',
+                    }}>
+                        {/* Panel Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Palette size={14} color="#a78bfa" />
+                                <span style={{ fontSize: '12px', fontWeight: 700, color: '#d1fae5', textTransform: 'uppercase', letterSpacing: '1px' }}>Building Colors</span>
+                            </div>
+                            <button
+                                onClick={() => setIsColorEditOpen(false)}
+                                style={{
+                                    width: '24px', height: '24px', borderRadius: '50%',
+                                    border: '1px solid rgba(255,255,255,0.1)', background: 'transparent',
+                                    color: '#6ee7b780', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer', fontSize: '12px',
+                                }}
+                            ><X size={12} /></button>
+                        </div>
+
+                        {/* Category Color Pickers */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {Object.values(MemoryCategory).map((cat) => {
+                                const defaultColor = CATEGORY_COLORS[cat as MemoryCategory];
+                                const currentColor = getCategoryColor(cat as MemoryCategory, customCategoryColors);
+                                const isCustom = customCategoryColors[cat] !== undefined;
+                                const catIcons: Record<string, React.ReactNode> = {
+                                    career: <Briefcase size={12} />,
+                                    health: <Activity size={12} />,
+                                    relationships: <Heart size={12} />,
+                                    personal: <Home size={12} />,
+                                    other: <Share2 size={12} />,
+                                };
+
+                                return (
+                                    <div key={cat} style={{
+                                        display: 'flex', alignItems: 'center', gap: '10px',
+                                        padding: '10px 12px', borderRadius: '12px',
+                                        background: 'rgba(255,255,255,0.04)',
+                                        border: '1px solid rgba(255,255,255,0.06)',
+                                        transition: 'all 0.2s',
+                                    }}>
+                                        {/* Category Icon + Name */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                                            <div style={{
+                                                width: '24px', height: '24px', borderRadius: '8px',
+                                                background: currentColor + '20',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                color: currentColor,
+                                            }}>
+                                                {catIcons[cat] || <Share2 size={12} />}
+                                            </div>
+                                            <span style={{
+                                                fontSize: '11px', fontWeight: 600, color: '#d1fae5',
+                                                textTransform: 'capitalize',
+                                            }}>{cat}</span>
+                                        </div>
+
+                                        {/* Color Preview + Picker */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <div style={{ position: 'relative' }}>
+                                                <div style={{
+                                                    width: '28px', height: '28px', borderRadius: '8px',
+                                                    background: currentColor,
+                                                    border: '2px solid rgba(255,255,255,0.15)',
+                                                    boxShadow: `0 0 8px ${currentColor}40`,
+                                                    cursor: 'pointer',
+                                                    overflow: 'hidden',
+                                                }}>
+                                                    <input
+                                                        type="color"
+                                                        value={currentColor}
+                                                        onChange={(e) => setCustomCategoryColor(cat as MemoryCategory, e.target.value)}
+                                                        style={{
+                                                            position: 'absolute', top: 0, left: 0,
+                                                            width: '100%', height: '100%',
+                                                            opacity: 0, cursor: 'pointer',
+                                                            border: 'none',
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            {/* Show hex value */}
+                                            <span style={{ fontSize: '9px', color: '#6ee7b760', fontFamily: 'monospace', width: '55px' }}>
+                                                {currentColor.toUpperCase()}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Reset Button */}
+                        <button
+                            onClick={() => resetCustomCategoryColors()}
+                            style={{
+                                marginTop: '14px', width: '100%', padding: '10px',
+                                borderRadius: '10px', fontFamily: 'inherit',
+                                background: 'rgba(239,68,68,0.06)',
+                                border: '1px solid rgba(239,68,68,0.2)',
+                                color: '#ef4444', fontWeight: 600, fontSize: '11px',
+                                cursor: 'pointer', transition: 'all 0.2s',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'rgba(239,68,68,0.12)';
+                                e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(239,68,68,0.06)';
+                                e.currentTarget.style.borderColor = 'rgba(239,68,68,0.2)';
+                            }}
+                        >
+                            <RotateCcw size={12} /> Reset to Defaults
+                        </button>
+
+                        <div style={{ marginTop: '10px', fontSize: '9px', color: '#6ee7b740', textAlign: 'center', lineHeight: 1.5 }}>
+                            Changes are saved locally and only visible to you.
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* ─── SIDEBAR ─── */}
@@ -2327,6 +2536,14 @@ export const UIOverlay: React.FC = () => {
                     }
                     @keyframes guidePanelIn {
                         from { opacity: 0; transform: scale(0.95) translateY(12px); }
+                        to { opacity: 1; transform: scale(1) translateY(0); }
+                    }
+                `}</style>
+            )}
+            {isColorEditOpen && (
+                <style>{`
+                    @keyframes colorPanelIn {
+                        from { opacity: 0; transform: scale(0.95) translateY(-8px); }
                         to { opacity: 1; transform: scale(1) translateY(0); }
                     }
                 `}</style>

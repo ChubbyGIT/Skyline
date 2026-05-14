@@ -106,6 +106,28 @@ export const CATEGORY_COLORS: Record<MemoryCategory, string> = {
   [MemoryCategory.OTHER]: '#FFD700' // Gold-Yellow
 };
 
+// Load custom category colors from localStorage (local-only, per-user)
+function loadCustomCategoryColors(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const saved = localStorage.getItem('skyline_custom_category_colors');
+    return saved ? JSON.parse(saved) : {};
+  } catch { return {}; }
+}
+
+function saveCustomCategoryColors(colors: Record<string, string>) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('skyline_custom_category_colors', JSON.stringify(colors));
+  } catch { /* ignore */ }
+}
+
+/** Get the effective color for a category (custom override or default) */
+export function getCategoryColor(category: MemoryCategory, customColors?: Record<string, string>): string {
+  const custom = customColors || loadCustomCategoryColors();
+  return custom[category] || CATEGORY_COLORS[category];
+}
+
 // Helper: compute building height using weighted average of impact + fondness (Option A)
 // Impact/fondness are stored on 1-100 scale; we normalize to 1-10 for the formula.
 export function computeHeight(impact: number, fondness: number, isCore: boolean): number {
@@ -146,6 +168,8 @@ interface CityState {
   npcUsers: CityUser[];
   selectedNPCId: string | null;
   isUserModalOpen: boolean;
+  // Custom category colors (local-only)
+  customCategoryColors: Record<string, string>;
 }
 
 interface CityActions {
@@ -162,6 +186,7 @@ interface CityActions {
   commitReposition: () => Promise<void>;
   isTileValidForReposition: (x: number, z: number) => boolean;
   // Timeline actions
+  toggleTheme: () => void;
   setTimelineActive: (active: boolean) => void;
   setTimelinePercent: (percent: number) => void;
   getVisibleBuildingIds: () => Set<string>;
@@ -188,6 +213,9 @@ interface CityActions {
   selectNPC: (id: string | null) => void;
   setUserModalOpen: (open: boolean) => void;
   tickNPCMovement: (delta: number) => void;
+  setCustomCategoryColor: (category: MemoryCategory, color: string) => void;
+  resetCustomCategoryColors: () => void;
+  applyCustomColorsToBuildings: () => void;
 }
 
 export type CityStore = CityState & CityActions;
@@ -217,6 +245,7 @@ export const useStore = create<CityStore>((set, get) => ({
   npcUsers: [],
   selectedNPCId: null,
   isUserModalOpen: false,
+  customCategoryColors: loadCustomCategoryColors(),
 
   fetchMemories: async () => {
     set({ isLoading: true });
@@ -281,7 +310,7 @@ export const useStore = create<CityStore>((set, get) => ({
             memoryId: m.id,
             position: { x: foundPos.x, y: 0, z: foundPos.z },
             height: computeHeight(m.impact, m.fondness, isCore),
-            color: CATEGORY_COLORS[m.category],
+            color: getCategoryColor(m.category, get().customCategoryColors),
             isAnimating: false,
             isCore: isCore
         });
@@ -380,7 +409,7 @@ export const useStore = create<CityStore>((set, get) => ({
       memoryId: memory.id,
       position: { x: foundPos.x, y: 0, z: foundPos.z },
       height: computeHeight(memory.impact, memory.fondness, isCore),
-      color: CATEGORY_COLORS[memory.category],
+      color: getCategoryColor(memory.category, get().customCategoryColors),
       isAnimating: true,
       isCore: isCore,
     };
@@ -496,6 +525,12 @@ export const useStore = create<CityStore>((set, get) => ({
 
     const othersBuildings = buildings.filter(b => b.id !== repositioningBuildingId);
     return isValidPosition({ x, z }, othersBuildings, !!building.isCore, gridSize);
+  },
+
+  /* ─── Theme toggle ─── */
+
+  toggleTheme: () => {
+    set((s) => ({ theme: s.theme === 'night' ? 'day' : 'night' }));
   },
 
   /* ─── Timeline actions ─── */
@@ -899,7 +934,7 @@ export const useStore = create<CityStore>((set, get) => ({
         memoryId: m.id,
         position: { x: foundPos.x, y: 0, z: foundPos.z },
         height: computeHeight(m.impact, m.fondness, isCore),
-        color: CATEGORY_COLORS[m.category],
+        color: getCategoryColor(m.category, get().customCategoryColors),
         isAnimating: false,
         isCore: isCore
       });
@@ -1219,6 +1254,34 @@ export const useStore = create<CityStore>((set, get) => ({
     if (changed) {
       set({ npcUsers: updated });
     }
+  },
+
+  /* ─── Custom category color actions (local-only) ─── */
+
+  setCustomCategoryColor: (category, color) => {
+    const updated = { ...get().customCategoryColors, [category]: color };
+    saveCustomCategoryColors(updated);
+    set({ customCategoryColors: updated });
+    // Live-update all buildings of that category
+    get().applyCustomColorsToBuildings();
+  },
+
+  resetCustomCategoryColors: () => {
+    saveCustomCategoryColors({});
+    set({ customCategoryColors: {} });
+    get().applyCustomColorsToBuildings();
+  },
+
+  applyCustomColorsToBuildings: () => {
+    const { buildings, memories, customCategoryColors } = get();
+    const updated = buildings.map(b => {
+      const mem = memories.find(m => m.id === b.memoryId);
+      if (!mem) return b;
+      const newColor = getCategoryColor(mem.category, customCategoryColors);
+      if (newColor !== b.color) return { ...b, color: newColor };
+      return b;
+    });
+    set({ buildings: updated });
   },
 }));
 
