@@ -72,6 +72,19 @@ export interface FriendRequest {
   toProfile?: FriendProfile;
 }
 
+export interface SharedCityListItem {
+  id: string;
+  userA: string;
+  userB: string;
+  cityName: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdBy: string;
+  createdAt: string;
+  partnerName?: string;
+  partnerAvatar?: string;
+  memoryCount?: number;
+}
+
 export interface CityUser {
   id: string;
   ownerId?: string;
@@ -170,6 +183,10 @@ interface CityState {
   isUserModalOpen: boolean;
   // Custom category colors (local-only)
   customCategoryColors: Record<string, string>;
+  // Shared cities
+  sharedCities: SharedCityListItem[];
+  sharedCityInvites: SharedCityListItem[];
+  sharedCitiesLoading: boolean;
 }
 
 interface CityActions {
@@ -216,6 +233,11 @@ interface CityActions {
   setCustomCategoryColor: (category: MemoryCategory, color: string) => void;
   resetCustomCategoryColors: () => void;
   applyCustomColorsToBuildings: () => void;
+  // Shared city actions
+  fetchSharedCities: () => Promise<void>;
+  createSharedCityInvite: (friendId: string, cityName?: string) => Promise<{ success: boolean; error?: string; shared_city_id?: string }>;
+  acceptSharedCityInvite: (sharedCityId: string) => Promise<void>;
+  declineSharedCityInvite: (sharedCityId: string) => Promise<void>;
 }
 
 export type CityStore = CityState & CityActions;
@@ -246,6 +268,9 @@ export const useStore = create<CityStore>((set, get) => ({
   selectedNPCId: null,
   isUserModalOpen: false,
   customCategoryColors: loadCustomCategoryColors(),
+  sharedCities: [],
+  sharedCityInvites: [],
+  sharedCitiesLoading: false,
 
   fetchMemories: async () => {
     set({ isLoading: true });
@@ -1262,7 +1287,6 @@ export const useStore = create<CityStore>((set, get) => ({
     const updated = { ...get().customCategoryColors, [category]: color };
     saveCustomCategoryColors(updated);
     set({ customCategoryColors: updated });
-    // Live-update all buildings of that category
     get().applyCustomColorsToBuildings();
   },
 
@@ -1282,6 +1306,85 @@ export const useStore = create<CityStore>((set, get) => ({
       return b;
     });
     set({ buildings: updated });
+  },
+
+  /* ─── Shared City actions ─── */
+
+  fetchSharedCities: async () => {
+    set({ sharedCitiesLoading: true });
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { set({ sharedCitiesLoading: false }); return; }
+    const uid = session.user.id;
+
+    const { data, error } = await supabase
+      .from('shared_cities')
+      .select('*')
+      .or(`user_a.eq.${uid},user_b.eq.${uid}`)
+      .order('created_at', { ascending: false });
+
+    if (error) { console.error('Error fetching shared cities:', error.message); set({ sharedCitiesLoading: false }); return; }
+
+    const items: SharedCityListItem[] = [];
+    const invites: SharedCityListItem[] = [];
+
+    for (const sc of (data || [])) {
+      const partnerId = sc.user_a === uid ? sc.user_b : sc.user_a;
+      const { data: pp } = await supabase.from('profiles').select('display_name, username, avatar_url').eq('id', partnerId).single();
+      let memCount = 0;
+      if (sc.status === 'accepted') {
+        const { count } = await supabase.from('shared_memories').select('*', { count: 'exact', head: true }).eq('shared_city_id', sc.id);
+        memCount = count || 0;
+      }
+      const item: SharedCityListItem = {
+        id: sc.id, userA: sc.user_a, userB: sc.user_b, cityName: sc.city_name,
+        status: sc.status, createdBy: sc.created_by, createdAt: sc.created_at,
+        partnerName: pp?.display_name || pp?.username || '', partnerAvatar: pp?.avatar_url,
+        memoryCount: memCount,
+      };
+      if (sc.status === 'accepted') items.push(item);
+      else if (sc.status === 'pending') invites.push(item);
+    }
+
+    set({ sharedCities: items, sharedCityInvites: invites, sharedCitiesLoading: false });
+  },
+
+  createSharedCityInvite: async (friendId, cityName) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return { success: false, error: 'Not authenticated' };
+    try {
+      const res = await fetch('/api/shared-city/create', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender_id: session.user.id, friend_id: friendId, city_name: cityName }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error };
+      await get().fetchSharedCities();
+      return { success: true, shared_city_id: data.shared_city_id };
+    } catch { return { success: false, error: 'Network error' }; }
+  },
+
+  acceptSharedCityInvite: async (sharedCityId) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    try {
+      await fetch('/api/shared-city/accept', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shared_city_id: sharedCityId, user_id: session.user.id }),
+      });
+      await get().fetchSharedCities();
+    } catch (e) { console.error('Error accepting shared city:', e); }
+  },
+
+  declineSharedCityInvite: async (sharedCityId) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    try {
+      await fetch('/api/shared-city/decline', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shared_city_id: sharedCityId, user_id: session.user.id }),
+      });
+      await get().fetchSharedCities();
+    } catch (e) { console.error('Error declining shared city:', e); }
   },
 }));
 
