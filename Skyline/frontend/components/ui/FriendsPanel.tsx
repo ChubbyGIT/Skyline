@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { useStore, FriendProfile, FriendRequest as FRType } from '@/store/useStore';
-import { Users, Search, UserPlus, Mail, X, Check, XCircle, ExternalLink, Send, AlertCircle } from 'lucide-react';
+import { useStore, FriendProfile, FriendRequest as FRType, SharedCityListItem } from '@/store/useStore';
+import { Users, Search, UserPlus, Mail, X, Check, XCircle, ExternalLink, Send, AlertCircle, Building2 } from 'lucide-react';
 
 const glass: React.CSSProperties = {
   background: 'rgba(255,255,255,0.06)', borderRadius: '16px',
@@ -112,7 +112,37 @@ export const FriendsPanel: React.FC = () => {
     fetchFriends, fetchFriendRequests, searchUsers,
     sendFriendRequest, acceptFriendRequest, declineFriendRequest,
     sendEmailInvite, searchByEmail,
+    sharedCities, fetchSharedCities, createSharedCityInvite,
   } = useStore();
+
+  const [scLoading, setScLoading] = useState<Record<string, boolean>>({});
+
+  // Fetch shared cities on mount
+  useEffect(() => { fetchSharedCities(); }, []);
+
+  // Find existing shared city for a friend
+  const getSharedCityForFriend = (friendId: string): SharedCityListItem | undefined => {
+    return sharedCities.find(
+      sc => (sc.userA === friendId || sc.userB === friendId)
+    );
+  };
+
+  const handleSharedCity = async (e: React.MouseEvent, friendId: string) => {
+    e.stopPropagation();
+    const existing = getSharedCityForFriend(friendId);
+    if (existing) {
+      // Already exists — open it
+      window.open(`/shared-city/${existing.id}`, '_blank');
+      return;
+    }
+    // Create new shared city instantly and open it
+    setScLoading(p => ({ ...p, [friendId]: true }));
+    const result = await createSharedCityInvite(friendId);
+    setScLoading(p => ({ ...p, [friendId]: false }));
+    if (result.success && result.shared_city_id) {
+      window.open(`/shared-city/${result.shared_city_id}`, '_blank');
+    }
+  };
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<FriendProfile[]>([]);
@@ -396,13 +426,37 @@ export const FriendsPanel: React.FC = () => {
               <div style={{ fontSize: 10, color: '#6ee7b780', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {f.email || '—'}
               </div>
-              <div style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4,
-                padding: '2px 8px', borderRadius: 10,
-                background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)',
-                fontSize: 9, fontWeight: 600, color: '#34d399',
-              }}>
-                🏙️ {f.buildingCount ?? 0} buildings
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '2px 8px', borderRadius: 10,
+                  background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)',
+                  fontSize: 9, fontWeight: 600, color: '#34d399',
+                }}>
+                  🏙️ {f.buildingCount ?? 0} buildings
+                </div>
+                {(() => {
+                  const sc = getSharedCityForFriend(f.id);
+                  const loading = scLoading[f.id];
+                  const exists = !!sc;
+                  return (
+                    <button
+                      onClick={(e) => handleSharedCity(e, f.id)}
+                      disabled={loading}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        padding: '2px 8px', borderRadius: 10, border: 'none',
+                        cursor: loading ? 'default' : 'pointer',
+                        background: exists ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.1)',
+                        color: exists ? '#a78bfa' : '#c4b5fd',
+                        fontSize: 9, fontWeight: 600, fontFamily: 'inherit', transition: 'all 0.2s',
+                      }}
+                    >
+                      <Building2 size={9} />
+                      {loading ? '...' : exists ? 'Open Shared City' : 'Shared City'}
+                    </button>
+                  );
+                })()}
               </div>
             </div>
 

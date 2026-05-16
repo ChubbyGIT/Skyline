@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase-admin';
-import { sendEmail } from '@/lib/mailer';
 
 /**
  * POST /api/shared-city/create
  * Input: { sender_id: string, friend_id: string, city_name?: string }
  *
- * Creates a pending shared city invitation between two friends.
+ * Instantly creates an active shared city between two friends.
+ * No invite flow — both users can access immediately.
  * The pair is normalized (smaller UUID = user_a) by the DB trigger.
  */
 export async function POST(request: NextRequest) {
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if a shared city already exists (any status)
+    // Check if a shared city already exists
     const { data: existing } = await supabase
       .from('shared_cities')
       .select('id, status')
@@ -55,35 +55,30 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (existing) {
-      if (existing.status === 'accepted') {
-        return NextResponse.json(
-          { error: 'A shared city already exists between you two', shared_city_id: existing.id },
-          { status: 409 }
-        );
-      }
-      if (existing.status === 'pending') {
-        return NextResponse.json(
-          { error: 'A shared city invitation is already pending', shared_city_id: existing.id },
-          { status: 409 }
-        );
-      }
-      // If declined, allow re-creation by deleting the old one
-      if (existing.status === 'declined') {
-        await supabase.from('shared_cities').delete().eq('id', existing.id);
-      }
+      return NextResponse.json(
+        { error: 'A shared city already exists', shared_city_id: existing.id },
+        { status: 409 }
+      );
     }
 
-    // Get sender profile for notification
+    // Get sender profile for city name
     const { data: senderProfile } = await supabase
       .from('profiles')
       .select('display_name, username')
       .eq('id', sender_id)
       .single();
 
-    const senderName = senderProfile?.display_name || senderProfile?.username || 'Someone';
-    const finalCityName = city_name || `${senderName}'s Shared City`;
+    const { data: friendProfile } = await supabase
+      .from('profiles')
+      .select('display_name, username')
+      .eq('id', friend_id)
+      .single();
 
-    // Create the shared city (pending status)
+    const senderName = senderProfile?.display_name || senderProfile?.username || 'User';
+    const friendName = friendProfile?.display_name || friendProfile?.username || 'Friend';
+    const finalCityName = city_name || `${senderName} & ${friendName}'s City`;
+
+    // Create the shared city — immediately active
     const { data: sharedCity, error: insertError } = await supabase
       .from('shared_cities')
       .insert({
@@ -91,9 +86,9 @@ export async function POST(request: NextRequest) {
         user_b: friend_id,
         city_name: finalCityName,
         created_by: sender_id,
-        status: 'pending',
+        status: 'accepted',
       })
-      .select('id, status, city_name')
+      .select('id, city_name')
       .single();
 
     if (insertError) {
@@ -104,32 +99,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Send notification email to friend
-    try {
-      const { data: friendProfile } = await supabase
-        .from('profiles')
-        .select('email, display_name')
-        .eq('id', friend_id)
-        .single();
-
-      if (friendProfile?.email) {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://skyline-gw5n.vercel.app';
-        await sendEmail({
-          to: friendProfile.email,
-          subject: `${senderName} wants to build a shared city with you on Skyline 🌆`,
-          html: buildSharedCityInviteEmail(senderName, finalCityName, appUrl),
-        });
-      }
-    } catch (emailErr) {
-      console.error('Shared city notification email failed:', emailErr);
-      // Non-blocking — city invite is still valid
-    }
-
     return NextResponse.json({
       success: true,
       shared_city_id: sharedCity.id,
       city_name: sharedCity.city_name,
-      message: 'Shared city invitation sent!',
     });
   } catch (err) {
     console.error('Create shared city error:', err);
@@ -138,44 +111,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-function buildSharedCityInviteEmail(senderName: string, cityName: string, appUrl: string): string {
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin:0;padding:0;background:#0a0a0a;font-family:'Segoe UI',Roboto,sans-serif;">
-  <div style="max-width:520px;margin:40px auto;background:linear-gradient(145deg,#06281e,#0d3b2e);border-radius:24px;border:1px solid rgba(52,211,153,0.2);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.6);">
-    <div style="padding:32px 32px 0;text-align:center;">
-      <div style="font-size:28px;font-weight:700;color:#d1fae5;letter-spacing:-0.5px;">
-        🌆 Skyline
-      </div>
-      <div style="margin-top:6px;font-size:12px;color:#a78bfa;letter-spacing:2px;text-transform:uppercase;">
-        Shared City Invitation
-      </div>
-    </div>
-    <div style="padding:28px 32px 36px;">
-      <p style="font-size:16px;color:#d1fae5;line-height:1.8;margin:0 0 20px;">Hi there,</p>
-      <p style="font-size:16px;color:#d1fae5;line-height:1.8;margin:0 0 24px;">
-        <strong style="color:#34d399;">${senderName}</strong> wants to build a shared city with you called <strong style="color:#a78bfa;">"${cityName}"</strong>. Accept the invitation to start co-building your memories together!
-      </p>
-      <div style="text-align:center;margin:28px 0;">
-        <a href="${appUrl}/city" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff;font-size:14px;font-weight:700;text-decoration:none;border-radius:999px;letter-spacing:0.5px;box-shadow:0 8px 25px rgba(139,92,246,0.4);">
-          View Invitation
-        </a>
-      </div>
-      <p style="font-size:13px;color:#6ee7b780;line-height:1.6;margin:0;text-align:center;">
-        If you didn't expect this invitation, you can safely ignore it.
-      </p>
-    </div>
-    <div style="padding:16px 32px;border-top:1px solid rgba(52,211,153,0.1);text-align:center;">
-      <span style="font-size:11px;color:#6ee7b750;">Skyline — Your Life, Built in 3D</span>
-    </div>
-  </div>
-</body>
-</html>`;
 }
