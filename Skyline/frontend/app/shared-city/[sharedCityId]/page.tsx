@@ -199,7 +199,18 @@ export default function SharedCityPage() {
         </div>
       )}
 
-      {!loading && !unauthorized && <UIOverlay />}
+      {!loading && !unauthorized && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10,
+            pointerEvents: 'none',
+          }}
+        >
+          <UIOverlay />
+        </div>
+      )}
       <BackgroundMusic />
 
       <style>{`
