@@ -12,7 +12,7 @@ const glass: React.CSSProperties = {
 /* ── Friend Profile Modal ── */
 const FriendModal: React.FC<{ friend: FriendProfile; onClose: () => void }> = ({ friend, onClose }) => {
   const { removeFriend } = useStore();
-  const visitCity = () => window.open(`/city/${friend.id}`, '_blank');
+  const visitCity = () => window.location.href = `/city/${friend.id}`;
   const fmt = (d?: string) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 
   return (
@@ -132,7 +132,7 @@ export const FriendsPanel: React.FC = () => {
     const existing = getSharedCityForFriend(friendId);
     if (existing) {
       // Already exists — open it
-      window.open(`/shared-city/${existing.id}`, '_blank');
+      window.location.href = `/shared-city/${existing.id}`;
       return;
     }
     // Create new shared city instantly and open it
@@ -140,7 +140,7 @@ export const FriendsPanel: React.FC = () => {
     const result = await createSharedCityInvite(friendId);
     setScLoading(p => ({ ...p, [friendId]: false }));
     if (result.success && result.shared_city_id) {
-      window.open(`/shared-city/${result.shared_city_id}`, '_blank');
+      window.location.href = `/shared-city/${result.shared_city_id}`;
     }
   };
 

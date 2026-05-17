@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/store/useStore";
 import { supabase } from "@/lib/supabase";
 import dynamic from "next/dynamic";
@@ -17,6 +17,7 @@ const BackgroundMusic = dynamic(
 
 export default function FriendCityPage() {
   const params = useParams();
+  const router = useRouter();
   const userId = params?.userId as string;
   const [friendName, setFriendName] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -52,6 +53,13 @@ export default function FriendCityPage() {
       setViewMode(false);
     };
   }, [userId]);
+
+  const handleBackToMyCity = () => {
+    // Clear view mode and do a full navigation to ensure the city page
+    // completely re-mounts and re-fetches the user's own city data
+    setViewMode(false);
+    window.location.href = '/city';
+  };
 
   return (
     <>
@@ -98,7 +106,7 @@ export default function FriendCityPage() {
 
         {/* Back button */}
         <button
-          onClick={() => window.close()}
+          onClick={handleBackToMyCity}
           style={{
             marginLeft: '16px',
             padding: '6px 16px',
@@ -122,7 +130,7 @@ export default function FriendCityPage() {
             e.currentTarget.style.boxShadow = 'none';
           }}
         >
-          Close
+          Back to My City
         </button>
       </div>
 

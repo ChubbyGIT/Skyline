@@ -130,7 +130,7 @@ export default function SharedCityPage() {
         <div style={{ fontSize: '14px', color: '#d1fae5cc', maxWidth: '400px', textAlign: 'center', lineHeight: 1.7 }}>
           You don't have access to this shared city. Only the two participants can view it.
         </div>
-        <button onClick={() => router.push('/city')} style={{
+        <button onClick={() => { window.location.href = '/city'; }} style={{
           marginTop: '12px', padding: '12px 28px', borderRadius: '999px',
           background: 'linear-gradient(135deg, #34d399, #10b981)', color: 'white',
           fontWeight: 700, fontSize: '13px', border: 'none', cursor: 'pointer',
@@ -180,7 +180,7 @@ export default function SharedCityPage() {
           <div style={{ fontSize: '10px', color: '#a78bfa', marginTop: '1px' }}>Shared with {partnerProfile?.displayName || 'Partner'}</div>
         </div>
         <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#a78bfa', boxShadow: '0 0 8px #a78bfa', animation: 'viewPulse 2s ease-in-out infinite', marginLeft: '4px' }} />
-        <button onClick={() => router.push('/city')} style={{
+        <button onClick={() => { window.location.href = '/city'; }} style={{
           marginLeft: '8px', padding: '6px 16px', borderRadius: '10px',
           background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.3)',
           color: '#6ee7b7', fontWeight: 600, fontSize: '11px', cursor: 'pointer',
