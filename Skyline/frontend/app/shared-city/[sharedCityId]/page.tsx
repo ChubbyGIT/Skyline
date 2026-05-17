@@ -47,6 +47,8 @@ function SharedCityBridge({ sharedCityId }: { sharedCityId: string }) {
       selectedNPCId: shared.selectedNPCId,
       isUserModalOpen: shared.isUserModalOpen,
       customCategoryColors: shared.customCategoryColors,
+      // Track who created the shared city (host) for NPC delete permissions
+      sharedCityCreatedBy: shared.cityCreatedBy,
       // Disable view mode so full CRUD is available
       viewMode: false,
       viewingUserId: null,
@@ -59,6 +61,7 @@ function SharedCityBridge({ sharedCityId }: { sharedCityId: string }) {
     shared.isLoading, shared.theme, shared.timelineActive,
     shared.timelinePercent, shared.npcUsers, shared.selectedNPCId,
     shared.isUserModalOpen, shared.customCategoryColors,
+    shared.cityCreatedBy,
   ]);
 
   // Override main store actions to point to shared city store

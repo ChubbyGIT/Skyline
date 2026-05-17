@@ -41,6 +41,7 @@ interface MemoryInput {
 
 interface SharedCityState {
   sharedCityId: string | null;
+  cityCreatedBy: string | null;
   cityName: string;
   partnerProfile: CreatorInfo | null;
   currentUserProfile: CreatorInfo | null;
@@ -98,13 +99,13 @@ export type SharedCityStore = SharedCityState & SharedCityActions;
 
 /* ─── Helpers (mirrored from useStore) ─── */
 
-function loadCustomColors(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
-  try { const s = localStorage.getItem('skyline_shared_custom_colors'); return s ? JSON.parse(s) : {}; } catch { return {}; }
-}
-function saveCustomColors(c: Record<string, string>) {
-  if (typeof window === 'undefined') return;
-  try { localStorage.setItem('skyline_shared_custom_colors', JSON.stringify(c)); } catch {}
+/** Save custom colors to the shared_cities.theme_settings JSONB column */
+async function saveColorsToDb(sharedCityId: string, colors: Record<string, string>) {
+  const { error } = await supabase.from('shared_cities').update({
+    theme_settings: { customCategoryColors: colors },
+    updated_at: new Date().toISOString(),
+  }).eq('id', sharedCityId);
+  if (error) console.error('Error saving shared city colors:', error.message);
 }
 
 function isValidPosition(pos: { x: number; z: number }, buildings: Building[], isCore: boolean, gridSize: number) {
@@ -145,12 +146,12 @@ function findNPCSpawn(buildings: Building[], npcs: CityUser[], gridSize: number)
 /* ─── Store ─── */
 
 export const useSharedCityStore = create<SharedCityStore>((set, get) => ({
-  sharedCityId: null, cityName: '', partnerProfile: null, currentUserProfile: null,
+  sharedCityId: null, cityCreatedBy: null, cityName: '', partnerProfile: null, currentUserProfile: null,
   memories: [], buildings: [], gridSize: 5, selectedBuildingId: null,
   isRepositioning: false, repositioningBuildingId: null, previewPosition: null,
   isLoading: false, theme: 'night', timelineActive: false, timelinePercent: 100,
   npcUsers: [], selectedNPCId: null, isUserModalOpen: false,
-  customCategoryColors: loadCustomColors(), creatorMap: {}, realtimeChannel: null,
+  customCategoryColors: {}, creatorMap: {}, realtimeChannel: null,
 
   initSharedCity: async (cityId) => {
     set({ isLoading: true, sharedCityId: cityId });
@@ -166,8 +167,13 @@ export const useSharedCityStore = create<SharedCityStore>((set, get) => ({
     const { data: partnerP } = await supabase.from('profiles').select('*').eq('id', partnerId).single();
     const { data: myP } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
 
+    // Load custom colors from theme_settings JSONB
+    const savedColors: Record<string, string> = (city.theme_settings as any)?.customCategoryColors || {};
+
     set({
+      cityCreatedBy: city.created_by,
       cityName: city.city_name,
+      customCategoryColors: savedColors,
       partnerProfile: partnerP ? { userId: partnerP.id, displayName: partnerP.display_name || partnerP.username || '', avatarUrl: partnerP.avatar_url } : null,
       currentUserProfile: myP ? { userId: myP.id, displayName: myP.display_name || myP.username || '', avatarUrl: myP.avatar_url } : null,
     });
@@ -186,6 +192,19 @@ export const useSharedCityStore = create<SharedCityStore>((set, get) => ({
         })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_city_users', filter: `shared_city_id=eq.${cityId}` },
         () => get().fetchNPCUsers())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'shared_cities', filter: `id=eq.${cityId}` },
+        (payload) => {
+          // Sync color changes from the other user
+          const newSettings = (payload.new as any)?.theme_settings;
+          if (newSettings && 'customCategoryColors' in newSettings) {
+            const incomingColors = (newSettings.customCategoryColors || {}) as Record<string, string>;
+            const currentColors = get().customCategoryColors;
+            if (JSON.stringify(incomingColors) !== JSON.stringify(currentColors)) {
+              set({ customCategoryColors: incomingColors });
+              get().applyCustomColorsToBuildings();
+            }
+          }
+        })
       .subscribe();
 
     set({ realtimeChannel: channel, isLoading: false });
@@ -195,7 +214,7 @@ export const useSharedCityStore = create<SharedCityStore>((set, get) => ({
   cleanup: () => {
     const ch = get().realtimeChannel;
     if (ch) supabase.removeChannel(ch);
-    set({ realtimeChannel: null, sharedCityId: null, memories: [], buildings: [], npcUsers: [], creatorMap: {} });
+    set({ realtimeChannel: null, sharedCityId: null, cityCreatedBy: null, memories: [], buildings: [], npcUsers: [], creatorMap: {}, customCategoryColors: {} });
   },
 
   fetchSharedMemories: async () => {
@@ -362,6 +381,15 @@ export const useSharedCityStore = create<SharedCityStore>((set, get) => ({
   },
 
   removeNPCUser: async (id) => {
+    // Only the city creator (host) can delete NPCs in a shared city
+    const { cityCreatedBy } = get();
+    if (cityCreatedBy) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || session.user.id !== cityCreatedBy) {
+        console.warn('Only the city host can delete NPCs in a shared city.');
+        return;
+      }
+    }
     await supabase.from('shared_city_users').delete().eq('id', id);
     set(s => ({ npcUsers: s.npcUsers.filter(u => u.id !== id), selectedNPCId: s.selectedNPCId === id ? null : s.selectedNPCId }));
   },
@@ -414,8 +442,20 @@ export const useSharedCityStore = create<SharedCityStore>((set, get) => ({
     if (changed) set({ npcUsers: updated });
   },
 
-  setCustomCategoryColor: (cat, color) => { const u = { ...get().customCategoryColors, [cat]: color }; saveCustomColors(u); set({ customCategoryColors: u }); get().applyCustomColorsToBuildings(); },
-  resetCustomCategoryColors: () => { saveCustomColors({}); set({ customCategoryColors: {} }); get().applyCustomColorsToBuildings(); },
+  setCustomCategoryColor: (cat, color) => {
+    const u = { ...get().customCategoryColors, [cat]: color };
+    set({ customCategoryColors: u });
+    get().applyCustomColorsToBuildings();
+    // Persist to DB so the other user sees the change in real-time
+    const { sharedCityId } = get();
+    if (sharedCityId) saveColorsToDb(sharedCityId, u);
+  },
+  resetCustomCategoryColors: () => {
+    set({ customCategoryColors: {} });
+    get().applyCustomColorsToBuildings();
+    const { sharedCityId } = get();
+    if (sharedCityId) saveColorsToDb(sharedCityId, {});
+  },
   applyCustomColorsToBuildings: () => {
     const { buildings, memories, customCategoryColors } = get();
     set({ buildings: buildings.map(b => { const m = memories.find(m => m.id === b.memoryId); if (!m) return b; const c = getCategoryColor(m.category, customCategoryColors); return c !== b.color ? { ...b, color: c } : b; }) });

@@ -187,6 +187,8 @@ interface CityState {
   sharedCities: SharedCityListItem[];
   sharedCityInvites: SharedCityListItem[];
   sharedCitiesLoading: boolean;
+  // Shared city host tracking (set via SharedCityBridge)
+  sharedCityCreatedBy: string | null;
 }
 
 interface CityActions {
@@ -271,6 +273,7 @@ export const useStore = create<CityStore>((set, get) => ({
   sharedCities: [],
   sharedCityInvites: [],
   sharedCitiesLoading: false,
+  sharedCityCreatedBy: null,
 
   fetchMemories: async () => {
     set({ isLoading: true });

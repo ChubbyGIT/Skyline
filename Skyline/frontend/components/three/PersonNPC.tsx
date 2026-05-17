@@ -42,8 +42,12 @@ export const PersonNPC: React.FC<PersonNPCProps> = ({ data }) => {
   const selectedNPCId = useStore(s => s.selectedNPCId);
   const updateNPCColor = useStore(s => s.updateNPCColor);
   const removeNPCUser = useStore(s => s.removeNPCUser);
+  const sharedCityCreatedBy = useStore(s => s.sharedCityCreatedBy);
+  const currentUserProfile = useStore(s => s.currentUserProfile);
   const isSelected = selectedNPCId === data.id;
   const theme = useStore(s => s.theme);
+  // Host can delete NPCs; if not in a shared city (sharedCityCreatedBy is null), anyone can delete
+  const canDeleteNPC = !sharedCityCreatedBy || (currentUserProfile?.id === sharedCityCreatedBy);
 
   // Smooth position interpolation
   const currentPos = useRef(new THREE.Vector3(data.position.x, 0, data.position.z));
@@ -402,7 +406,8 @@ export const PersonNPC: React.FC<PersonNPCProps> = ({ data }) => {
                   />
                   🎨 Color
                 </label>
-                {/* Delete */}
+                {/* Delete — only shown to host in shared city */}
+                {canDeleteNPC && (
                 <button
                   onClick={(e) => { e.stopPropagation(); removeNPCUser(data.id); selectNPC(null); }}
                   style={{
@@ -415,6 +420,7 @@ export const PersonNPC: React.FC<PersonNPCProps> = ({ data }) => {
                 >
                   🗑️ Delete
                 </button>
+                )}
               </div>
             )}
 
