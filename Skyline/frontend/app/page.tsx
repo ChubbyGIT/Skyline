@@ -321,7 +321,7 @@ function CtaBand() {
           <span className="text-glow-gold italic text-[#eac33e]">to be built.</span>
         </h2>
         <p className="mx-auto mt-8 max-w-xl text-base leading-relaxed text-emerald-100/65">
-          Join 10,000+ builders mapping their existence in the{' '}
+          Join fellow builders mapping their existence in the{' '}
           <span className="font-medium text-[#eac33e]">emerald deep</span>.
         </p>
         <div className="mt-12">
