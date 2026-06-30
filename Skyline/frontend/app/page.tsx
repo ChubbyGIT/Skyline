@@ -130,15 +130,14 @@ function ProblemSolution() {
               boxShadow: 'var(--shadow-ambient)',
             }}
           >
-            <span className="label-spaced text-[#eac33e]">The Digital Void</span>
+            <span className="label-spaced text-[#eac33e]">The Broken Journal</span>
             <h3 className="headline-tight mt-4 text-3xl font-semibold text-emerald-50 md:text-4xl">
-              Instagram Fatigue &amp; Grid Zero.
+              Reflection shouldn&apos;t feel like homework.
             </h3>
             <p className="mt-6 max-w-md text-base leading-relaxed text-emerald-100/65">
-              Modern journaling has flattened our memories. We scroll past our lives in a 2D
-              vertical void, suffering from content fatigue where{' '}
-              <span className="font-medium text-[#eac33e]">meaningful moments</span>{' '}
-              become mere pixels.
+              You open a journaling app. You see a blank page. You type a paragraph. You close it.
+              You{' '}<span className="font-medium text-[#eac33e]">never read it again.</span>{' '}
+              Text-based journals create no spatial context &mdash; your brain can&apos;t place a memory in a flat list. There&apos;s no reward, no sense of building something. Just words vanishing into a scroll.
             </p>
 
             {/* Abstract SVG art */}
