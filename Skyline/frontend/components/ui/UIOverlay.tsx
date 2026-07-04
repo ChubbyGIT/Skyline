@@ -4,9 +4,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore, MemoryCategory, FriendProfile, FriendRequest as FriendRequestType, CityUser } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
-import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock, HelpCircle, Users, Search, UserPlus, Mail, ExternalLink, Check, XCircle, Palette, UserRound, Sun, Moon, Edit3, RotateCcw } from 'lucide-react';
+import { LogOut, X, Plus, Home, Heart, Briefcase, Activity, Share2, Calendar, MapPin, Trash2, Camera, User, ChevronLeft, ChevronRight, Download, Clock, HelpCircle, Users, Search, UserPlus, Mail, ExternalLink, Check, XCircle, Palette, UserRound, Sun, Moon, Edit3, RotateCcw, Mic, MicOff } from 'lucide-react';
 import { CATEGORY_COLORS, getCategoryColor } from '@/store/useStore';
 import { FriendsPanel } from './FriendsPanel';
+import { useSpeechToText } from '@/lib/useSpeechToText';
 
 export const UIOverlay: React.FC = () => {
     const router = useRouter();
@@ -109,6 +110,47 @@ export const UIOverlay: React.FC = () => {
     const [npcColorPickerValue, setNpcColorPickerValue] = useState('#3498db');
     const [isColorEditOpen, setIsColorEditOpen] = useState(false);
 
+    // Speech-to-Text hook
+    const {
+        isSupported: sttSupported,
+        status: sttStatus,
+        transcript: sttTranscript,
+        error: sttError,
+        startListening: sttStart,
+        stopListening: sttStop,
+        cancelListening: sttCancel,
+        resetTranscript: sttReset,
+    } = useSpeechToText();
+
+    // Sync STT transcript into the caption field (append to existing text)
+    const sttPrevTranscriptRef = React.useRef('');
+    useEffect(() => {
+        if (sttTranscript && sttTranscript !== sttPrevTranscriptRef.current) {
+            sttPrevTranscriptRef.current = sttTranscript;
+            // Only update while listening — don't overwrite after user edits
+            if (sttStatus === 'listening') {
+                setFormData((prev) => {
+                    // Find the base text (what was there before STT started)
+                    const baseText = (prev as any)._captionBeforeSTT ?? prev.caption;
+                    const newCaption = baseText ? baseText + ' ' + sttTranscript : sttTranscript;
+                    return { ...prev, caption: newCaption };
+                });
+            }
+        }
+    }, [sttTranscript, sttStatus]);
+
+    // When STT stops, finalize the caption and clear the base-text marker
+    useEffect(() => {
+        if (sttStatus === 'idle' && sttPrevTranscriptRef.current) {
+            sttPrevTranscriptRef.current = '';
+            setFormData((prev) => {
+                const cleaned = { ...prev };
+                delete (cleaned as any)._captionBeforeSTT;
+                return cleaned;
+            });
+        }
+    }, [sttStatus]);
+
     useEffect(() => {
         if (isModalOpen && !draftId) {
             setDraftId(`MEM-${Math.random().toString(36).substring(2, 8).toUpperCase()}`);
@@ -203,6 +245,9 @@ export const UIOverlay: React.FC = () => {
     };
 
     const handleCancelModal = () => {
+        // Stop any active speech recognition
+        sttCancel();
+        sttReset();
         setIsModalOpen(false);
         setIsCore(false);
         setFormData({
@@ -1535,23 +1580,126 @@ export const UIOverlay: React.FC = () => {
                                 />
                             </div>
 
-                            {/* Caption (optional) */}
+                            {/* Caption (optional) with Speech-to-Text */}
                             <div style={{ marginBottom: '12px' }}>
-                                <label style={{ display: 'block', fontSize: '10px', fontWeight: 600, color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '6px' }}>Caption <span style={{ fontWeight: 400, opacity: 0.5, textTransform: 'none', letterSpacing: '0' }}>(optional)</span></label>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                    <label style={{ fontSize: '10px', fontWeight: 600, color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Caption <span style={{ fontWeight: 400, opacity: 0.5, textTransform: 'none', letterSpacing: '0' }}>(optional)</span></label>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        {sttStatus === 'listening' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => sttCancel()}
+                                                style={{
+                                                    padding: '3px 10px', borderRadius: '8px',
+                                                    background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                                                    color: '#f87171', fontSize: '10px', fontWeight: 600,
+                                                    cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit',
+                                                    letterSpacing: '0.5px',
+                                                }}
+                                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)'; }}
+                                                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
+                                            >Cancel</button>
+                                        )}
+                                        {/* Mic button */}
+                                        <button
+                                            type="button"
+                                            title={
+                                                !sttSupported
+                                                    ? 'Speech recognition not supported in this browser'
+                                                    : sttStatus === 'listening'
+                                                        ? 'Stop recording'
+                                                        : 'Dictate caption'
+                                            }
+                                            disabled={!sttSupported}
+                                            onClick={() => {
+                                                if (sttStatus === 'listening') {
+                                                    sttStop();
+                                                } else {
+                                                    // Save the current caption text so we can append to it
+                                                    setFormData((prev) => ({ ...prev, _captionBeforeSTT: prev.caption } as any));
+                                                    sttReset();
+                                                    sttStart();
+                                                }
+                                            }}
+                                            style={{
+                                                width: '28px', height: '28px', borderRadius: '8px',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                cursor: sttSupported ? 'pointer' : 'not-allowed',
+                                                transition: 'all 0.2s',
+                                                border: sttStatus === 'listening'
+                                                    ? '1px solid rgba(239,68,68,0.5)'
+                                                    : '1px solid rgba(255,255,255,0.12)',
+                                                background: sttStatus === 'listening'
+                                                    ? 'rgba(239,68,68,0.15)'
+                                                    : 'rgba(255,255,255,0.06)',
+                                                color: !sttSupported
+                                                    ? '#6ee7b740'
+                                                    : sttStatus === 'listening'
+                                                        ? '#ef4444'
+                                                        : '#6ee7b7',
+                                                animation: sttStatus === 'listening' ? 'mic-pulse 1.5s ease-in-out infinite' : 'none',
+                                                opacity: sttSupported ? 1 : 0.4,
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                if (sttSupported && sttStatus !== 'listening') {
+                                                    e.currentTarget.style.background = 'rgba(52,211,153,0.12)';
+                                                    e.currentTarget.style.borderColor = 'rgba(52,211,153,0.4)';
+                                                    e.currentTarget.style.boxShadow = '0 0 12px rgba(52,211,153,0.25)';
+                                                }
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                if (sttStatus !== 'listening') {
+                                                    e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                                                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)';
+                                                    e.currentTarget.style.boxShadow = 'none';
+                                                }
+                                            }}
+                                        >
+                                            {sttStatus === 'listening' ? <MicOff size={13} /> : <Mic size={13} />}
+                                        </button>
+                                    </div>
+                                </div>
                                 <textarea
                                     style={{
                                         width: '100%', padding: '8px 12px', borderRadius: '10px',
-                                        background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                                        background: 'rgba(255,255,255,0.06)',
+                                        border: sttStatus === 'listening'
+                                            ? '1px solid rgba(239,68,68,0.3)'
+                                            : '1px solid rgba(255,255,255,0.1)',
                                         color: '#d1fae5', outline: 'none', fontSize: '12px', fontWeight: 400,
                                         fontFamily: 'inherit', transition: 'all 0.2s', boxSizing: 'border-box',
                                         resize: 'none', height: '48px',
                                     }}
-                                    onFocus={(e) => { e.target.style.borderColor = 'rgba(52,211,153,0.5)'; e.target.style.boxShadow = '0 0 10px rgba(52,211,153,0.15)'; }}
-                                    onBlur={(e) => { e.target.style.borderColor = 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none'; }}
-                                    placeholder="A short note about this memory..."
+                                    onFocus={(e) => { e.target.style.borderColor = sttStatus === 'listening' ? 'rgba(239,68,68,0.5)' : 'rgba(52,211,153,0.5)'; e.target.style.boxShadow = sttStatus === 'listening' ? '0 0 10px rgba(239,68,68,0.15)' : '0 0 10px rgba(52,211,153,0.15)'; }}
+                                    onBlur={(e) => { e.target.style.borderColor = sttStatus === 'listening' ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.1)'; e.target.style.boxShadow = 'none'; }}
+                                    placeholder={sttStatus === 'listening' ? 'Listening... speak now' : 'A short note about this memory...'}
                                     value={formData.caption}
                                     onChange={e => setFormData({...formData, caption: e.target.value})}
                                 />
+                                {/* STT status indicator */}
+                                {sttStatus === 'listening' && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                                        <div style={{
+                                            width: '6px', height: '6px', borderRadius: '50%',
+                                            background: '#ef4444',
+                                            boxShadow: '0 0 6px rgba(239,68,68,0.6)',
+                                            animation: 'mic-pulse 1.5s ease-in-out infinite',
+                                        }} />
+                                        <span style={{ fontSize: '10px', color: '#f87171', fontWeight: 500, letterSpacing: '0.3px' }}>Recording — speak now or click mic to stop</span>
+                                    </div>
+                                )}
+                                {/* STT error message */}
+                                {sttError && (
+                                    <div style={{
+                                        marginTop: '6px', padding: '6px 10px', borderRadius: '8px',
+                                        background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+                                        fontSize: '10px', color: '#f87171', fontWeight: 500,
+                                        display: 'flex', alignItems: 'center', gap: '6px',
+                                    }}>
+                                        <MicOff size={11} />
+                                        {sttError}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Category + Date row */}
