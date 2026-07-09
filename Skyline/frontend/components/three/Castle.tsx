@@ -463,6 +463,7 @@ export const Castle: React.FC<CastleProps> = ({ data }) => {
   const { theme, memories, selectedBuildingId, selectBuilding, isRepositioning } = useStore();
   const memory = memories.find(m => m.id === data.id);
   const isSelected = selectedBuildingId === data.id;
+  const isHighlighted = hovered || isSelected;
 
   const { wallH, towerH, keepH } = useMemo(() => ({
     wallH:   data.height * 0.30,
@@ -522,24 +523,39 @@ export const Castle: React.FC<CastleProps> = ({ data }) => {
 
       {/* ── Corner towers ── */}
       {[[-offset, -offset], [-offset, offset], [offset, -offset], [offset, offset]].map(([x, z], i) => (
-        <CornerTower key={i} pos={[x, 0.36, z]} H={towerH} R={0.65} stone={stone} stoneDark={stoneDark} catColor={catColor} theme={theme} hovered={hovered} />
+        <CornerTower key={i} pos={[x, 0.36, z]} H={towerH} R={0.65} stone={hovered ? '#FFD700' : stone} stoneDark={hovered ? '#e6b800' : stoneDark} catColor={catColor} theme={theme} hovered={isHighlighted} />
       ))}
 
       {/* ── Curtain walls ── */}
-      <Wall from={[-offset, 0, -offset]} to={[offset, 0, -offset]}  H={wallH} T={0.36} stone={stone} stoneDark={stoneDark} hovered={hovered} />
-      <Wall from={[-offset, 0,  offset]} to={[offset, 0,  offset]}  H={wallH} T={0.36} stone={stone} stoneDark={stoneDark} hovered={hovered} />
-      <Wall from={[-offset, 0, -offset]} to={[-offset, 0, offset]}  H={wallH} T={0.36} stone={stone} stoneDark={stoneDark} hovered={hovered} />
-      <Wall from={[offset,  0, -offset]} to={[offset,  0, offset]}  H={wallH} T={0.36} stone={stone} stoneDark={stoneDark} hovered={hovered} />
+      <Wall from={[-offset, 0, -offset]} to={[offset, 0, -offset]}  H={wallH} T={0.36} stone={isHighlighted ? '#FFD700' : stone} stoneDark={isHighlighted ? '#e6b800' : stoneDark} hovered={isHighlighted} />
+      <Wall from={[-offset, 0,  offset]} to={[offset, 0,  offset]}  H={wallH} T={0.36} stone={isHighlighted ? '#FFD700' : stone} stoneDark={isHighlighted ? '#e6b800' : stoneDark} hovered={isHighlighted} />
+      <Wall from={[-offset, 0, -offset]} to={[-offset, 0, offset]}  H={wallH} T={0.36} stone={isHighlighted ? '#FFD700' : stone} stoneDark={isHighlighted ? '#e6b800' : stoneDark} hovered={isHighlighted} />
+      <Wall from={[offset,  0, -offset]} to={[offset,  0, offset]}  H={wallH} T={0.36} stone={isHighlighted ? '#FFD700' : stone} stoneDark={isHighlighted ? '#e6b800' : stoneDark} hovered={isHighlighted} />
 
       {/* ── Gatehouse (front) ── */}
-      <Gatehouse pos={[0, 0.36, -offset]} H={wallH * 0.95} W={1.8} stone={stone} stoneDark={stoneDark} theme={theme} hovered={hovered} />
+      <Gatehouse pos={[0, 0.36, -offset]} H={wallH * 0.95} W={1.8} stone={isHighlighted ? '#FFD700' : stone} stoneDark={isHighlighted ? '#e6b800' : stoneDark} theme={theme} hovered={isHighlighted} />
 
       {/* ── Central keep ── */}
       <group position={[0, 0.36, 0]}>
-        <Keep H={keepH} W={2.8} stone={stone} stoneDark={stoneDark} catColor={catColor} theme={theme} hovered={hovered} />
+        <Keep H={keepH} W={2.8} stone={isHighlighted ? '#FFD700' : stone} stoneDark={isHighlighted ? '#e6b800' : stoneDark} catColor={catColor} theme={theme} hovered={isHighlighted} />
       </group>
-      {hovered && (
+      {isHighlighted && (
         <pointLight position={[0, keepH * 0.5, 0]} intensity={3} distance={18} color="#FFD700" />
+      )}
+
+      {/* Floating map pin when selected */}
+      {isSelected && (
+        <group position={[0, keepH + 2.5, 0]}>
+          <mesh position={[0, 0.45, 0]}>
+            <sphereGeometry args={[0.3, 16, 16]} />
+            <meshStandardMaterial color={catColor} emissive={catColor} emissiveIntensity={1.2} />
+          </mesh>
+          <mesh position={[0, 0, 0]} rotation={[Math.PI, 0, 0]}>
+            <coneGeometry args={[0.18, 0.5, 12]} />
+            <meshStandardMaterial color={catColor} emissive={catColor} emissiveIntensity={0.8} />
+          </mesh>
+          <pointLight position={[0, 0.3, 0]} intensity={2} distance={8} color={catColor} />
+        </group>
       )}
 
       {/* ── Courtyard details ── */}

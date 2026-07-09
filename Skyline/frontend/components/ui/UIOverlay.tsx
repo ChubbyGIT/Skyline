@@ -66,6 +66,8 @@ export const UIOverlay: React.FC = () => {
         customCategoryColors,
         setCustomCategoryColor,
         resetCustomCategoryColors,
+        // Edit memory
+        updateMemory,
     } = useStore() as any;
 
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -81,6 +83,8 @@ export const UIOverlay: React.FC = () => {
     const [exportNotification, setExportNotification] = useState(false);
     const [isGuideOpen, setIsGuideOpen] = useState(false);
     const [activeFilter, setActiveFilter] = useState<MemoryCategory | null>(null);
+    // Edit memory state
+    const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
     // Friends state
     const [sidebarTab, setSidebarTab] = useState<'city' | 'friends'>('city');
     const [friendSearchQuery, setFriendSearchQuery] = useState('');
@@ -226,11 +230,25 @@ export const UIOverlay: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        await addMemory({
-            ...formData,
-            date: new Date(formData.date),
-            isCore
-        });
+        if (editingMemoryId) {
+            // Edit mode — update existing memory
+            await updateMemory(editingMemoryId, {
+                title: formData.title,
+                caption: formData.caption,
+                category: formData.category,
+                impact: formData.impact,
+                fondness: formData.fondness,
+                date: new Date(formData.date),
+            });
+            setEditingMemoryId(null);
+        } else {
+            // Create mode — add new memory
+            await addMemory({
+                ...formData,
+                date: new Date(formData.date),
+                isCore
+            });
+        }
         setIsModalOpen(false);
         setIsCore(false);
         setFormData({
@@ -244,12 +262,33 @@ export const UIOverlay: React.FC = () => {
         });
     };
 
+    const handleEditMemory = (memoryId: string) => {
+        const mem = memories.find((m: any) => m.id === memoryId);
+        if (!mem) return;
+        const isCore = mem.title?.startsWith('[CORE]');
+        const displayTitle = isCore ? mem.title.replace('[CORE] ', '') : mem.title;
+        setEditingMemoryId(memoryId);
+        setFormData({
+            title: displayTitle || '',
+            caption: mem.caption || '',
+            category: mem.category || MemoryCategory.OTHER,
+            impact: mem.impact || 50,
+            fondness: mem.fondness || 50,
+            date: mem.date ? new Date(mem.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            image: null,
+        });
+        setIsCore(!!isCore);
+        selectBuilding(null); // Close detail panel
+        setIsModalOpen(true);
+    };
+
     const handleCancelModal = () => {
         // Stop any active speech recognition
         sttCancel();
         sttReset();
         setIsModalOpen(false);
         setIsCore(false);
+        setEditingMemoryId(null);
         setFormData({
             title: '',
             caption: '',
@@ -361,16 +400,30 @@ export const UIOverlay: React.FC = () => {
             }
             ctx.globalAlpha = 1;
 
-            // Label
             ctx.fillStyle = '#fff';
-            ctx.font = 'bold 9px Inter, Arial, sans-serif';
+            ctx.font = 'bold 8px Inter, Arial, sans-serif';
             ctx.textAlign = 'center';
-            const title = (mem.title || '').replace('[CORE] ', '').substring(0, 12);
-            ctx.fillText(
-                title,
-                offsetX + b.position.x * cellSize + cellSize / 2,
-                offsetY + b.position.z * cellSize + cellSize / 2 + 3
-            );
+            const title = (mem.title || '').replace('[CORE] ', '');
+            // Word-wrap title within the cell
+            const maxWidth = cellSize * footprint - 8;
+            if (ctx.measureText(title).width > maxWidth) {
+                // Truncate with ellipsis if still too long
+                let truncated = title;
+                while (ctx.measureText(truncated + '…').width > maxWidth && truncated.length > 3) {
+                    truncated = truncated.slice(0, -1);
+                }
+                ctx.fillText(
+                    truncated + '…',
+                    offsetX + b.position.x * cellSize + cellSize / 2,
+                    offsetY + b.position.z * cellSize + cellSize / 2 + 3
+                );
+            } else {
+                ctx.fillText(
+                    title,
+                    offsetX + b.position.x * cellSize + cellSize / 2,
+                    offsetY + b.position.z * cellSize + cellSize / 2 + 3
+                );
+            }
         });
 
         // Legend
@@ -523,7 +576,7 @@ export const UIOverlay: React.FC = () => {
                     position: 'fixed',
                     top: '20px',
                     right: '24px',
-                    zIndex: 998,
+                    zIndex: selectedBuildingId ? 50 : 998,
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '10px',
@@ -734,7 +787,7 @@ export const UIOverlay: React.FC = () => {
                     style={{
                         position: 'absolute',
                         top: '50%',
-                        right: '-14px',
+                        right: sidebarOpen ? '-14px' : '-10px',
                         transform: 'translateY(-50%)',
                         zIndex: 30,
                         width: '28px',
@@ -801,7 +854,7 @@ export const UIOverlay: React.FC = () => {
 
                     {/* ── Expanded state ── */}
                     {sidebarOpen && (
-                        <div style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        <div style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto', overflowX: 'hidden' }} className="scrollbar-hide">
                             
                             {/* Header */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
@@ -1185,7 +1238,7 @@ export const UIOverlay: React.FC = () => {
                 if (!selMemory) return null;
                 const isCore = selMemory.title?.startsWith('[CORE]');
                 const displayTitle = isCore ? selMemory.title.replace('[CORE] ', '') : selMemory.title;
-                const accentColor = isCore ? '#fcd34d' : '#34d399';
+                const accentColor = isCore ? '#a855f7' : '#34d399';
 
                 return (
                     <div
@@ -1199,10 +1252,10 @@ export const UIOverlay: React.FC = () => {
                             zIndex: 55,
                             background: 'rgba(6, 40, 30, 0.92)',
                             backdropFilter: 'blur(20px)',
-                            border: `1px solid ${isCore ? 'rgba(252,211,77,0.35)' : 'rgba(52,211,153,0.2)'}`,
+                            border: `1px solid ${isCore ? 'rgba(168,85,247,0.35)' : 'rgba(52,211,153,0.2)'}`,
                             borderRadius: '20px',
                             padding: '28px',
-                            boxShadow: `0 20px 60px rgba(0,0,0,0.7), 0 0 25px ${isCore ? 'rgba(252,211,77,0.12)' : 'rgba(52,211,153,0.1)'}`,
+                            boxShadow: `0 20px 60px rgba(0,0,0,0.7), 0 0 25px ${isCore ? 'rgba(168,85,247,0.12)' : 'rgba(52,211,153,0.1)'}`,
                             fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
                             color: 'white',
                         }}
@@ -1226,8 +1279,8 @@ export const UIOverlay: React.FC = () => {
                         {isCore && (
                             <div style={{
                                 display: 'inline-block', padding: '4px 12px', borderRadius: '20px',
-                                background: 'rgba(252,211,77,0.15)', border: '1px solid rgba(252,211,77,0.3)',
-                                fontSize: '10px', fontWeight: 600, color: '#fcd34d',
+                                background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.3)',
+                                fontSize: '10px', fontWeight: 600, color: '#a855f7',
                                 textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '14px',
                             }}>Core Memory</div>
                         )}
@@ -1326,7 +1379,7 @@ export const UIOverlay: React.FC = () => {
                         <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '18px 0 16px 0' }} />
 
                         {/* Action buttons */}
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             <button
                                 onClick={() => selectBuilding(null)}
                                 style={{
@@ -1335,10 +1388,24 @@ export const UIOverlay: React.FC = () => {
                                     border: `1px solid ${accentColor}60`,
                                     color: accentColor, fontWeight: 600, fontSize: '12px',
                                     cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit',
+                                    minWidth: '70px',
                                 }}
                                 onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 15px ${accentColor}40`; e.currentTarget.style.background = `${accentColor}15`; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
                             >Close</button>
+                            <button
+                                onClick={() => handleEditMemory(selMemory.id)}
+                                style={{
+                                    flex: 1, padding: '10px 0', borderRadius: '12px',
+                                    background: 'rgba(168,85,247,0.08)',
+                                    border: '1px solid rgba(168,85,247,0.4)',
+                                    color: '#a855f7', fontWeight: 600, fontSize: '12px',
+                                    cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit',
+                                    minWidth: '70px',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 0 15px rgba(168,85,247,0.3)'; e.currentTarget.style.background = 'rgba(168,85,247,0.15)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = 'rgba(168,85,247,0.08)'; }}
+                            >Edit</button>
                             <button
                                 onClick={() => startRepositioning(selectedBuildingId)}
                                 style={{
@@ -1347,6 +1414,7 @@ export const UIOverlay: React.FC = () => {
                                     border: '1px solid rgba(124,207,255,0.4)',
                                     color: '#7ecfff', fontWeight: 600, fontSize: '12px',
                                     cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit',
+                                    minWidth: '70px',
                                 }}
                                 onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 0 15px rgba(124,207,255,0.3)'; e.currentTarget.style.background = 'rgba(124,207,255,0.15)'; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = 'rgba(124,207,255,0.08)'; }}
@@ -1359,6 +1427,7 @@ export const UIOverlay: React.FC = () => {
                                     border: '1px solid rgba(239,68,68,0.4)',
                                     color: '#ef4444', fontWeight: 600, fontSize: '12px',
                                     cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit',
+                                    minWidth: '70px',
                                 }}
                                 onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 0 15px rgba(239,68,68,0.3)'; e.currentTarget.style.background = 'rgba(239,68,68,0.15)'; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
@@ -1557,7 +1626,7 @@ export const UIOverlay: React.FC = () => {
 
                         {/* Header */}
                         <div style={{ marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.08)', position: 'relative', zIndex: 1 }}>
-                            <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#d1fae5', letterSpacing: '-0.3px', marginBottom: '2px', lineHeight: 1.2 }}>Record Memory</h2>
+                            <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#d1fae5', letterSpacing: '-0.3px', marginBottom: '2px', lineHeight: 1.2 }}>{editingMemoryId ? 'Edit Memory' : 'Record Memory'}</h2>
                             <p style={{ fontSize: '11px', color: '#6ee7b7', fontWeight: 400, fontStyle: 'italic' }}>{draftId}</p>
                         </div>
 
@@ -1881,7 +1950,7 @@ export const UIOverlay: React.FC = () => {
                                 onMouseEnter={(e) => { if (!isLoading) { e.currentTarget.style.boxShadow = '0 12px 35px rgba(16,185,129,0.6)'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
                                 onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 8px 25px rgba(16,185,129,0.4)'; e.currentTarget.style.transform = 'translateY(0)'; }}
                             >
-                                {isLoading ? 'Processing...' : 'Construct Instance'}
+                                {isLoading ? 'Processing...' : (editingMemoryId ? 'Save Changes' : 'Construct Instance')}
                             </button>
                         </form>
                     </div>
@@ -2378,6 +2447,7 @@ export const UIOverlay: React.FC = () => {
                             maxWidth: '90vw',
                             maxHeight: '82vh',
                             overflowY: 'auto',
+                            overflowX: 'hidden',
                             borderRadius: '24px',
                             background: 'rgba(6, 40, 30, 0.95)',
                             backdropFilter: 'blur(24px)',
@@ -2442,7 +2512,7 @@ export const UIOverlay: React.FC = () => {
                                     <span style={{ fontSize: '16px' }}>🏙️</span>
                                     <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Overview</h3>
                                 </div>
-                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: 0 }}>
+                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: 0, textAlign: 'justify' }}>
                                     Skyline is a memory-tracking and 3D journaling application where your life experiences are visualized as a growing city. Each journal entry appears as a <strong style={{ color: '#6ee7b7' }}>skyscraper</strong>, while your most meaningful memories become <strong style={{ color: '#fcd34d' }}>castles</strong>. Over time, your city evolves into a visual map of your personal journey.
                                 </p>
                             </div>
@@ -2455,7 +2525,7 @@ export const UIOverlay: React.FC = () => {
                                     <span style={{ fontSize: '16px' }}>✏️</span>
                                     <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Creating Entries</h3>
                                 </div>
-                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: '0 0 12px 0' }}>
+                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: '0 0 12px 0', textAlign: 'justify' }}>
                                     Each memory you add becomes a structure in your city. For every entry, you can:
                                 </p>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '14px' }}>
@@ -2532,7 +2602,7 @@ export const UIOverlay: React.FC = () => {
                                     <span style={{ fontSize: '16px' }}>📊</span>
                                     <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Impact &amp; Fondness</h3>
                                 </div>
-                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: '0 0 12px 0' }}>
+                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: '0 0 12px 0', textAlign: 'justify' }}>
                                     Each entry is shaped by two parameters that determine building height:
                                 </p>
                                 <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
@@ -2629,7 +2699,7 @@ export const UIOverlay: React.FC = () => {
                                     <span style={{ fontSize: '16px' }}>📥</span>
                                     <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#34d399', letterSpacing: '-0.2px', margin: 0 }}>Exporting Your City</h3>
                                 </div>
-                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: 0 }}>
+                                <p style={{ fontSize: '13px', color: '#d1fae5cc', lineHeight: 1.7, margin: 0, textAlign: 'justify' }}>
                                     Click <strong style={{ color: '#6ee7b7' }}>Export 2D Map</strong> in the bottom bar to generate an image of your city layout — perfect for sharing or archiving your memory map.
                                 </p>
                             </div>

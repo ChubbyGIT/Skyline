@@ -161,6 +161,7 @@ export const House: React.FC<HouseProps> = ({ data, readOnly }) => {
   const { theme, memories, selectedBuildingId, selectBuilding, isRepositioning } = useStore();
   const memory = memories.find(m => m.id === data.id);
   const isSelected = selectedBuildingId === data.id;
+  const isHighlighted = hovered || isSelected;
   const seed = seedFromId(data.id);
 
   const isDark = theme === 'night';
@@ -177,21 +178,21 @@ export const House: React.FC<HouseProps> = ({ data, readOnly }) => {
 
   // Wall color — warm residential tones, tinted by category
   const wallColor = useMemo(() => {
-    if (hovered) return '#FFD700';
+    if (isHighlighted) return '#FFD700';
     const bases = isDark
       ? ['#3a3228', '#352e24', '#3e3630', '#383024', '#342c22']
       : ['#e8dcc8', '#ddd0b8', '#e0d4c0', '#d8ccb4', '#e4d8c4'];
     return bases[seed % bases.length];
-  }, [seed, isDark, hovered]);
+  }, [seed, isDark, isHighlighted]);
 
   // Roof color — earthy tones
   const roofColor = useMemo(() => {
-    if (hovered) return '#e6b800';
+    if (isHighlighted) return '#e6b800';
     const roofs = isDark
       ? ['#4a2a1a', '#3e2818', '#452c1c', '#3a2416', '#4e2e1e']
       : ['#8b4513', '#7a3e12', '#964b15', '#6e3610', '#a05218'];
     return roofs[seed % roofs.length];
-  }, [seed, isDark, hovered]);
+  }, [seed, isDark, isHighlighted]);
 
   /* ─── Animations ─── */
   useEffect(() => {
@@ -235,16 +236,31 @@ export const House: React.FC<HouseProps> = ({ data, readOnly }) => {
       onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer'; }}
       onPointerOut={(e) => { e.stopPropagation(); setHovered(false); document.body.style.cursor = 'auto'; }}
     >
-      {/* Hover glow */}
-      {hovered && (
+      {/* Hover / selection glow */}
+      {isHighlighted && (
         <pointLight position={[0, totalH / 2, 0]} intensity={2} distance={10} color="#FFD700" />
+      )}
+
+      {/* Floating map pin when selected */}
+      {isSelected && (
+        <group position={[0, totalH + 0.8, 0]}>
+          <mesh position={[0, 0.3, 0]}>
+            <sphereGeometry args={[0.18, 16, 16]} />
+            <meshStandardMaterial color={data.color} emissive={data.color} emissiveIntensity={1.2} />
+          </mesh>
+          <mesh position={[0, 0, 0]} rotation={[Math.PI, 0, 0]}>
+            <coneGeometry args={[0.11, 0.35, 12]} />
+            <meshStandardMaterial color={data.color} emissive={data.color} emissiveIntensity={0.8} />
+          </mesh>
+          <pointLight position={[0, 0.15, 0]} intensity={1.2} distance={5} color={data.color} />
+        </group>
       )}
 
       {/* ── 1. Foundation/Base ── */}
       <mesh position={[0, 0.03, 0]} receiveShadow>
         <boxGeometry args={[bodyW + 0.12, 0.06, bodyD + 0.12]} />
         <meshStandardMaterial
-          color={hovered ? '#d4a600' : isDark ? '#3a3028' : '#8a7a68'}
+          color={isHighlighted ? '#d4a600' : isDark ? '#3a3028' : '#8a7a68'}
           roughness={0.92}
         />
       </mesh>
@@ -256,8 +272,8 @@ export const House: React.FC<HouseProps> = ({ data, readOnly }) => {
           color={wallColor}
           roughness={0.82}
           metalness={0.04}
-          emissive={isDark ? accentColor : (isSelected ? '#ffffff' : accentColor)}
-          emissiveIntensity={isDark ? 0.08 : (isSelected ? 0.15 : 0.06)}
+          emissive={isDark ? accentColor : (isHighlighted ? '#FFD700' : accentColor)}
+          emissiveIntensity={isDark ? 0.08 : (isHighlighted ? 0.2 : 0.06)}
         />
       </mesh>
 

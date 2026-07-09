@@ -40,7 +40,8 @@ const seedFromId = (id: string) => {
 
 /* ─── instanced window grid ─── */
 
-const WindowGrid = ({ floors, cols, bodyHeight, bodyWidth, topWidth, theme, hovered }: any) => {
+const WindowGrid = ({ floors, cols, bodyHeight, bodyWidth, topWidth, theme, hovered: isHighlighted }: any) => {
+  const hovered = isHighlighted;
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const count = floors * cols * 4; // 4 faces
   const dummy = useMemo(() => new THREE.Object3D(), []);
@@ -102,7 +103,8 @@ const WindowGrid = ({ floors, cols, bodyHeight, bodyWidth, topWidth, theme, hove
 };
 
 /* ─── floor lines (horizontal mullions) ─── */
-const FloorLines = ({ floors, bodyHeight, bodyWidth, topWidth, theme, hovered }: any) => {
+const FloorLines = ({ floors, bodyHeight, bodyWidth, topWidth, theme, hovered: isHighlighted }: any) => {
+  const hovered = isHighlighted;
   const elements: any[] = [];
   const lineColor = hovered ? '#FFD700' : theme === 'day' ? '#bcc5ce' : '#555555';
   const floorH = bodyHeight / floors;
@@ -152,6 +154,7 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
     memories, theme
   } = useStore();
   const isSelected = selectedBuildingId === data.id;
+  const isHighlighted = hovered || isSelected;
   const memory = memories.find(m => m.id === data.id);
   const seed = seedFromId(data.id);
 
@@ -159,24 +162,24 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
 
   // per-building material variation
   const facadeColor = useMemo(() => {
-    if (hovered) return '#FFD700';
+    if (isHighlighted) return '#FFD700';
     const bases = theme === 'day'
       ? ['#c5d5e4', '#b8c9d9', '#cdd8e3', '#d1dce6', '#afc4d6']
       : ['#2a3a4a', '#243444', '#1e2e3e', '#2f3f4f', '#1a2a3a'];
     return bases[seed % bases.length];
-  }, [seed, theme, hovered]);
+  }, [seed, theme, isHighlighted]);
 
   const matProps = useMemo(() => {
-    if (hovered) return { color: '#FFD700', metalness: 0.15, roughness: 0.2, emissive: '#FFD700', emissiveIntensity: 1.5, clearcoat: 0.6 };
+    if (isHighlighted) return { color: '#FFD700', metalness: 0.15, roughness: 0.2, emissive: '#FFD700', emissiveIntensity: 1.5, clearcoat: 0.6 };
     return {
       color: facadeColor,
       metalness: 0.45 + (seed % 3) * 0.08,
       roughness: 0.12 + (seed % 4) * 0.04,
-      emissive: theme === 'night' ? data.color : (isSelected ? '#ffffff' : data.color),
-      emissiveIntensity: theme === 'night' ? 0.25 : (isSelected ? 0.25 : 0.15),
+      emissive: theme === 'night' ? data.color : data.color,
+      emissiveIntensity: theme === 'night' ? 0.25 : 0.15,
       clearcoat: 0.7,
     };
-  }, [facadeColor, seed, theme, data.color, isSelected, hovered]);
+  }, [facadeColor, seed, theme, data.color, isHighlighted]);
 
   /* ─── animations ─── */
   useEffect(() => {
@@ -209,8 +212,8 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
   };
 
   const totalH = bd.lobbyHeight + bd.bodyHeight + bd.crownHeight;
-  const lobbyColor = hovered ? '#FFD700' : theme === 'day' ? '#8a9bab' : '#1e2e3e';
-  const crownColor = hovered ? '#FFD700' : theme === 'day' ? '#d0dbe5' : '#3a4a5a';
+  const lobbyColor = isHighlighted ? '#FFD700' : theme === 'day' ? '#8a9bab' : '#1e2e3e';
+  const crownColor = isHighlighted ? '#FFD700' : theme === 'day' ? '#d0dbe5' : '#3a4a5a';
 
   return (
     <group
@@ -220,30 +223,48 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
       onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer'; }}
       onPointerOut={(e) => { e.stopPropagation(); setHovered(false); document.body.style.cursor = 'auto'; }}
     >
-      {/* Hover glow */}
-      {hovered && (
+      {/* Hover / selection glow */}
+      {isHighlighted && (
         <pointLight position={[0, totalH / 2, 0]} intensity={2} distance={15} color="#FFD700" />
+      )}
+
+      {/* Floating map pin when selected */}
+      {isSelected && (
+        <group position={[0, totalH + 1.2, 0]}>
+          {/* Pin head */}
+          <mesh position={[0, 0.35, 0]}>
+            <sphereGeometry args={[0.22, 16, 16]} />
+            <meshStandardMaterial color={data.color} emissive={data.color} emissiveIntensity={1.2} />
+          </mesh>
+          {/* Pin body (cone pointing down) */}
+          <mesh position={[0, 0, 0]} rotation={[Math.PI, 0, 0]}>
+            <coneGeometry args={[0.14, 0.4, 12]} />
+            <meshStandardMaterial color={data.color} emissive={data.color} emissiveIntensity={0.8} />
+          </mesh>
+          {/* Pin glow */}
+          <pointLight position={[0, 0.2, 0]} intensity={1.5} distance={6} color={data.color} />
+        </group>
       )}
 
       {/* ── 1. Ground-level entrance lobby ── */}
       <mesh position={[0, bd.lobbyHeight / 2, 0]} castShadow receiveShadow>
         <boxGeometry args={[bd.baseWidth, bd.lobbyHeight, bd.baseWidth]} />
-        <meshStandardMaterial color={lobbyColor} roughness={0.6} metalness={0.3} emissive={isSelected ? '#ffffff' : '#000000'} emissiveIntensity={isSelected ? 0.2 : 0} />
+        <meshStandardMaterial color={lobbyColor} roughness={0.6} metalness={0.3} emissive={isHighlighted ? '#FFD700' : '#000000'} emissiveIntensity={isHighlighted ? 0.3 : 0} />
       </mesh>
       {/* Lobby entrance panel (front) */}
       <mesh position={[0, bd.lobbyHeight * 0.45, bd.baseWidth / 2 + 0.005]}>
         <planeGeometry args={[bd.baseWidth * 0.5, bd.lobbyHeight * 0.7]} />
         <meshStandardMaterial
-          color={hovered ? '#FFD700' : theme === 'day' ? '#5a8ab5' : '#ffe082'}
-          emissive={hovered ? '#FFD700' : theme === 'night' ? '#ffb300' : '#000000'}
-          emissiveIntensity={hovered ? 1.5 : theme === 'night' ? 0.8 : 0}
+          color={isHighlighted ? '#FFD700' : theme === 'day' ? '#5a8ab5' : '#ffe082'}
+          emissive={isHighlighted ? '#FFD700' : theme === 'night' ? '#ffb300' : '#000000'}
+          emissiveIntensity={isHighlighted ? 1.5 : theme === 'night' ? 0.8 : 0}
           transparent opacity={0.85}
         />
       </mesh>
       {/* Lobby canopy overhang */}
       <mesh position={[0, bd.lobbyHeight, 0]} castShadow>
         <boxGeometry args={[bd.baseWidth + 0.15, 0.06, bd.baseWidth + 0.15]} />
-        <meshStandardMaterial color={hovered ? '#FFD700' : '#707d8a'} metalness={0.6} roughness={0.3} />
+        <meshStandardMaterial color={isHighlighted ? '#FFD700' : '#707d8a'} metalness={0.6} roughness={0.3} />
       </mesh>
 
       {/* ── 2. Main glass tower body (tapered) ── */}
@@ -277,7 +298,7 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
               els.push(
                 <mesh key={`band-${s}`} position={[0, s * sectionH, 0]}>
                   <boxGeometry args={[wBot + 0.04, 0.04, wBot + 0.04]} />
-                  <meshStandardMaterial color={hovered ? '#FFD700' : '#8a9bab'} metalness={0.5} roughness={0.3} />
+                  <meshStandardMaterial color={isHighlighted ? '#FFD700' : '#8a9bab'} metalness={0.5} roughness={0.3} />
                 </mesh>
               );
             }
@@ -292,7 +313,7 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
           bodyWidth={bd.bodyWidth}
           topWidth={bd.topWidth}
           theme={theme}
-          hovered={hovered}
+          hovered={isHighlighted}
         />
 
         {/* Glass curtain-wall windows */}
@@ -303,14 +324,14 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
           bodyWidth={bd.bodyWidth}
           topWidth={bd.topWidth}
           theme={theme}
-          hovered={hovered}
+          hovered={isHighlighted}
         />
 
         {/* Vertical mullion columns (corners) */}
         {[[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([sx, sz], i) => (
           <mesh key={`col-${i}`} position={[sx * bd.bodyWidth / 2, bd.bodyHeight / 2, sz * bd.bodyWidth / 2]} castShadow>
             <boxGeometry args={[0.06, bd.bodyHeight, 0.06]} />
-            <meshStandardMaterial color={hovered ? '#FFD700' : theme === 'day' ? '#8a9bab' : '#3a4a5a'} metalness={0.5} roughness={0.3} />
+            <meshStandardMaterial color={isHighlighted ? '#FFD700' : theme === 'day' ? '#8a9bab' : '#3a4a5a'} metalness={0.5} roughness={0.3} />
           </mesh>
         ))}
       </group>
@@ -320,7 +341,7 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
         {/* Crown base slab */}
         <mesh position={[0, 0.02, 0]} castShadow>
           <boxGeometry args={[bd.topWidth + 0.08, 0.04, bd.topWidth + 0.08]} />
-          <meshStandardMaterial color={hovered ? '#FFD700' : '#8a9bab'} metalness={0.6} roughness={0.25} />
+          <meshStandardMaterial color={isHighlighted ? '#FFD700' : '#8a9bab'} metalness={0.6} roughness={0.25} />
         </mesh>
         {/* Crown body */}
         <mesh position={[0, bd.crownHeight / 2, 0]} castShadow>
@@ -337,7 +358,7 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
         {/* Mechanical rooftop equipment (AC units) */}
         <mesh position={[bd.topWidth * 0.15, bd.crownHeight + 0.08, 0]} castShadow>
           <boxGeometry args={[0.2, 0.16, 0.25]} />
-          <meshStandardMaterial color={hovered ? '#FFD700' : '#6b7b8b'} roughness={0.7} />
+          <meshStandardMaterial color={isHighlighted ? '#FFD700' : '#6b7b8b'} roughness={0.7} />
         </mesh>
         <mesh position={[-bd.topWidth * 0.15, bd.crownHeight + 0.08, 0.1]} castShadow>
           <boxGeometry args={[0.15, 0.12, 0.15]} />
@@ -351,7 +372,7 @@ export const Building: React.FC<BuildingProps> = ({ data }) => {
           {/* Antenna pole */}
           <mesh position={[0, 0.6, 0]}>
             <cylinderGeometry args={[0.025, 0.06, 1.2, 8]} />
-            <meshStandardMaterial color={hovered ? '#FFD700' : '#d0d5da'} metalness={0.8} roughness={0.15} />
+            <meshStandardMaterial color={isHighlighted ? '#FFD700' : '#d0d5da'} metalness={0.8} roughness={0.15} />
           </mesh>
           {/* Aviation warning light */}
           <mesh position={[0, 1.25, 0]}>

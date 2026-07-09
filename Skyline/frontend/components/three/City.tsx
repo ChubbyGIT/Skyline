@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useCallback, useRef } from 'react';
+import React, { useMemo, useCallback, useRef, useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { Building } from './Building';
 import { Castle } from './Castle';
@@ -51,6 +51,8 @@ export const City: React.FC = () => {
 
   // For drag: track if pointer is down on the ground during repositioning
   const isDragging = useRef(false);
+  // Track which tile is hovered during repositioning for visual feedback
+  const [hoveredTile, setHoveredTile] = useState<{ x: number; z: number } | null>(null);
 
   const tiles = useMemo(() => {
     const grid = [];
@@ -99,10 +101,19 @@ export const City: React.FC = () => {
   }, [isRepositioning, previewPosition, validTileSet, repositioningBuildingId, occupiedColor, groundColor]);
 
   const handleTilePointerMove = useCallback((x: number, z: number) => {
-    if (isRepositioning && isDragging.current) {
-      setPreviewPosition({ x, z });
+    if (isRepositioning) {
+      setHoveredTile({ x, z });
+      if (isDragging.current) {
+        setPreviewPosition({ x, z });
+      }
     }
   }, [isRepositioning, setPreviewPosition]);
+
+  const handleTilePointerLeave = useCallback(() => {
+    if (isRepositioning) {
+      setHoveredTile(null);
+    }
+  }, [isRepositioning]);
 
   const handleTileClick = useCallback((x: number, z: number) => {
     if (isRepositioning && repositioningBuildingId) {
@@ -134,7 +145,13 @@ export const City: React.FC = () => {
       {tiles.map((tile) => (
         <mesh 
             key={`${tile.x}-${tile.z}`} 
-            position={[tile.x, -0.05, tile.z]} 
+            position={[
+                tile.x, 
+                isRepositioning && hoveredTile && hoveredTile.x === tile.x && hoveredTile.z === tile.z 
+                    ? (validTileSet.has(`${tile.x},${tile.z}`) ? 0.12 : 0.0) 
+                    : -0.05, 
+                tile.z
+            ]} 
             rotation={[-Math.PI / 2, 0, 0]}
             onClick={(e) => {
                 e.stopPropagation();
@@ -147,13 +164,30 @@ export const City: React.FC = () => {
                   handleTilePointerMove(tile.x, tile.z);
                 }
             }}
+            onPointerLeave={(e) => {
+                if (isRepositioning) {
+                  handleTilePointerLeave();
+                }
+            }}
         >
           <planeGeometry args={[0.95, 0.95]} />
           <meshPhysicalMaterial 
             color={getTileColor(tile)} 
             roughness={0.8}
-            emissive={isRepositioning ? (validTileSet.has(`${tile.x},${tile.z}`) ? '#ffffff' : '#000000') : '#000000'}
-            emissiveIntensity={isRepositioning ? 0.15 : 0}
+            emissive={
+                isRepositioning 
+                    ? (hoveredTile && hoveredTile.x === tile.x && hoveredTile.z === tile.z
+                        ? (validTileSet.has(`${tile.x},${tile.z}`) ? '#7ecfff' : '#ff4444')
+                        : (validTileSet.has(`${tile.x},${tile.z}`) ? '#ffffff' : '#000000'))
+                    : '#000000'
+            }
+            emissiveIntensity={
+                isRepositioning 
+                    ? (hoveredTile && hoveredTile.x === tile.x && hoveredTile.z === tile.z
+                        ? 0.6
+                        : 0.15)
+                    : 0
+            }
           />
         </mesh>
       ))}

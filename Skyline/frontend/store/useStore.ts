@@ -195,6 +195,7 @@ interface CityActions {
   fetchMemories: () => Promise<void>;
   addMemory: (input: MemoryInput) => Promise<void>;
   removeMemory: (id: string) => Promise<void>;
+  updateMemory: (id: string, updates: { title?: string; caption?: string; category?: MemoryCategory; impact?: number; fondness?: number; date?: Date }) => Promise<void>;
   repositionBuilding: (buildingId: string, newPosition: Vector3Position) => Promise<void>;
   selectBuilding: (id: string | null) => void;
   expandGrid: () => void;
@@ -448,6 +449,63 @@ export const useStore = create<CityStore>((set, get) => ({
       gridSize: newGridSize,
       isLoading: false
     });
+  },
+
+  updateMemory: async (id, updates) => {
+    const { memories, buildings } = get();
+    const existing = memories.find(m => m.id === id);
+    if (!existing) return;
+
+    const isCore = existing.title?.startsWith('[CORE]');
+    const updateData: any = { updated_at: new Date().toISOString() };
+    
+    if (updates.title !== undefined) {
+      updateData.title = isCore ? `[CORE] ${updates.title}` : updates.title;
+    }
+    if (updates.caption !== undefined) updateData.caption = updates.caption || null;
+    if (updates.category !== undefined) updateData.category = updates.category;
+    if (updates.impact !== undefined) updateData.impact = updates.impact;
+    if (updates.fondness !== undefined) updateData.fondness = updates.fondness;
+    if (updates.date !== undefined) updateData.date = updates.date.toISOString();
+
+    const { error } = await supabase
+      .from('memories')
+      .update(updateData)
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error updating memory:', error.message || error);
+      return;
+    }
+
+    // Update local state
+    const updatedMemories = memories.map(m => {
+      if (m.id !== id) return m;
+      return {
+        ...m,
+        ...(updates.title !== undefined && { title: updateData.title }),
+        ...(updates.caption !== undefined && { caption: updates.caption }),
+        ...(updates.category !== undefined && { category: updates.category }),
+        ...(updates.impact !== undefined && { impact: updates.impact }),
+        ...(updates.fondness !== undefined && { fondness: updates.fondness }),
+        ...(updates.date !== undefined && { date: updates.date.toISOString() }),
+        updatedAt: updateData.updated_at,
+      };
+    });
+
+    // Update building height and color if impact/fondness/category changed
+    const updatedBuildings = buildings.map(b => {
+      if (b.id !== id) return b;
+      const updatedMem = updatedMemories.find(m => m.id === id)!;
+      const newIsCore = updatedMem.title?.startsWith('[CORE]');
+      return {
+        ...b,
+        height: computeHeight(updatedMem.impact, updatedMem.fondness, !!newIsCore),
+        color: getCategoryColor(updatedMem.category, get().customCategoryColors),
+      };
+    });
+
+    set({ memories: updatedMemories, buildings: updatedBuildings });
   },
 
   removeMemory: async (id) => {
