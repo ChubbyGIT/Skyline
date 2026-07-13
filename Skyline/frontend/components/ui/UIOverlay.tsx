@@ -1304,16 +1304,6 @@ export const UIOverlay: React.FC = () => {
 
                         {/* Fields */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                            {/* Memory ID */}
-                            <div>
-                                <div style={{ fontSize: '10px', fontWeight: 600, color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '1.2px', marginBottom: '5px' }}>Memory ID</div>
-                                <div style={{
-                                    padding: '8px 12px', borderRadius: '10px',
-                                    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                                    fontSize: '12px', color: '#94a3b8', fontFamily: 'monospace',
-                                }}>{selMemory.id}</div>
-                            </div>
-
                             {/* Date */}
                             <div>
                                 <div style={{ fontSize: '10px', fontWeight: 600, color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '1.2px', marginBottom: '5px' }}>Date</div>
